@@ -21,6 +21,7 @@ public class PlayerStatus {
     public String artist;
     public String album;
     public String cover;
+    public String mode;
     public long duration = 0;
     public long time = 0;
     public boolean isPlaying = false;
@@ -29,7 +30,7 @@ public class PlayerStatus {
     @NonNull
     @Override
     public String toString() {
-        return "id:"+id+", title:"+title+", artist:"+artist+", album:"+album+", cover:"+cover+", duration:"+Utils.timeStr(duration)+", time:"+Utils.timeStr(time)+", isPlaying:"+isPlaying+", volume:"+volume;
+        return "id:"+id+", title:"+title+", artist:"+artist+", album:"+album+", cover:"+cover+", duration:"+Utils.timeStr(duration)+", time:"+Utils.timeStr(time)+", mode:"+mode+", isPlaying:"+isPlaying+", volume:"+volume;
     }
 
     public String display() {
