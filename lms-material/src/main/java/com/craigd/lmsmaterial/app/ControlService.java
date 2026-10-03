@@ -35,6 +35,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.SystemClock;
 import android.support.v4.media.MediaBrowserCompat;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaSessionCompat;
@@ -61,6 +62,8 @@ import com.craigd.lmsmaterial.app.cometd.CometClient;
 import com.craigd.lmsmaterial.app.cometd.PlayerStatus;
 
 import org.eclipse.jetty.util.B64Code;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -90,6 +93,8 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final String ACTION_QUIT = "quit";
     private static final int MSG_ID = 1;
     private static final int COVER_TIMEOUT_MS = 10000;
+    private static final int PLAYER_AVAILABILITY_RETRY_MS = 1000;
+    private static final int PLAYER_AVAILABILITY_TIMEOUT_MS = 15000;
     private static final String[] PREV_COMMAND = {"button", "jump_rew"};
     private static final String[] PLAY_COMMAND = {"play"};
     private static final String[] PAUSE_COMMAND = {"pause", "1"};
@@ -135,6 +140,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     private String currentCoverUrl;
     private Bitmap currentCoverBitmap;
     private Bitmap fallbackBitmap;
+    private long playerAvailabilityDeadline;
+    private boolean playerWasUnavailable;
+    private final Runnable playerAvailabilityCheck = this::checkPlayerAvailability;
 
     private static class IncomingHandler extends Handler {
         private final WeakReference<ControlService> serviceRef;
@@ -153,6 +161,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             if (msg.what == ACTIVE_PLAYER && null!=srv.notificationBuilder && null!=srv.notificationManager) {
                 String[] vals = (String[]) msg.obj;
                 Utils.debug("Set notification player name " + vals[1] + ", id:" + vals[0]);
+                srv.cancelPlayerAvailabilityCheck();
                 srv.notificationBuilder.setContentTitle(vals[1]);
                 if (null!=srv.cometClient) {
                     srv.cometClient.setPlayer(vals[0]);
@@ -560,6 +569,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             browseExecutor.shutdownNow();
             browseExecutor = null;
         }
+        cancelPlayerAvailabilityCheck();
         browseHelper = null;
         if (null!=mediaSession) {
             mediaSession.setActive(false);
@@ -630,14 +640,74 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (Utils.isEmpty(MainActivity.activePlayer)) {
             MainActivity.activePlayer = prefs.getString(MainActivity.CURRENT_PLAYER_ID_KEY, null);
         }
+        new LocalPlayer(prefs, getApplicationContext()).autoStart(false);
         String setting = prefs.getString(SettingsActivity.NOTIFCATIONS_PREF_KEY, NO_NOTIFICATION);
         notificationType = setting;
         cometClient.setPlayer(MainActivity.activePlayer);
         cometClient.connect();
+        startPlayerAvailabilityCheck();
         if (null==connectionChangeListener) {
             connectionChangeListener = new ConnectionChangeListener(this);
             IntentFilter filter = new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION);
             registerReceiver(connectionChangeListener, filter);
+        }
+    }
+
+    private void startPlayerAvailabilityCheck() {
+        if (Utils.isEmpty(MainActivity.activePlayer)) {
+            return;
+        }
+        playerAvailabilityDeadline = SystemClock.elapsedRealtime() + PLAYER_AVAILABILITY_TIMEOUT_MS;
+        playerWasUnavailable = false;
+        handler.removeCallbacks(playerAvailabilityCheck);
+        handler.post(playerAvailabilityCheck);
+    }
+
+    private void cancelPlayerAvailabilityCheck() {
+        handler.removeCallbacks(playerAvailabilityCheck);
+        playerAvailabilityDeadline = 0;
+        playerWasUnavailable = false;
+    }
+
+    private void checkPlayerAvailability() {
+        final String playerId = MainActivity.activePlayer;
+        if (Utils.isEmpty(playerId)) {
+            return;
+        }
+        getBrowseExecutor().execute(() -> {
+            PlayerAvailability.Player player = null;
+            try {
+                if (null==rpc) {
+                    rpc = new JsonRpc(getApplicationContext());
+                }
+                JSONObject response = rpc.sendMessageSync("", new String[]{"players", "0", "100"}, 3000);
+                JSONObject result = null==response ? null : response.optJSONObject("result");
+                JSONArray players = null==result ? null : result.optJSONArray("players_loop");
+                player = PlayerAvailability.findConnectedPlayer(players, playerId);
+            } catch (Exception e) {
+                Utils.debug("Failed to check player availability: " + e.getMessage());
+            }
+            PlayerAvailability.Player availablePlayer = player;
+            handler.post(() -> playerAvailabilityChecked(playerId, availablePlayer));
+        });
+    }
+
+    private void playerAvailabilityChecked(String playerId, PlayerAvailability.Player player) {
+        if (!playerId.equals(MainActivity.activePlayer)) {
+            return;
+        }
+        if (player != null) {
+            MainActivity.activePlayerName = player.name;
+            if (playerWasUnavailable) {
+                cometClient.setPlayer(player.id);
+                cometClient.reconnect();
+            }
+            updateMediaSession();
+            return;
+        }
+        playerWasUnavailable = true;
+        if (SystemClock.elapsedRealtime() < playerAvailabilityDeadline) {
+            handler.postDelayed(playerAvailabilityCheck, PLAYER_AVAILABILITY_RETRY_MS);
         }
     }
 

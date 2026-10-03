@@ -251,6 +251,14 @@ public class CometClient {
         });
     }
 
+    public synchronized void reconnect() {
+        if (bayeuxClient != null) {
+            backgroundHandler.sendEmptyMessage(MSG_RECONNECT);
+        } else {
+            connect();
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> getRecord(Map<String, Object> record, String name) {
         Object rec = record.get(name);
