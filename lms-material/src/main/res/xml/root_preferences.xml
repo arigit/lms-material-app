@@ -147,6 +147,14 @@
             app:iconSpaceReserved="false"
             app:key="auto_tab_order"
             app:title="@string/auto_tab_order" />
+        <ListPreference
+            android:defaultValue="tracks"
+            android:entries="@array/autoAlbumClick"
+            android:entryValues="@array/autoAlbumClickAlias"
+            android:key="auto_album_click"
+            android:title="@string/auto_album_click"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
     <PreferenceCategory
