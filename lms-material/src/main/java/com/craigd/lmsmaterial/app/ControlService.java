@@ -94,12 +94,17 @@ public class ControlService extends MediaBrowserServiceCompat {
     public static final int LIBRARY_CHANGED = 4;
     private static final String ACTION_POWER = "power";
     private static final String ACTION_QUIT = "quit";
+    private static final String ACTION_RATE = "rate";
+    private static final int RATING_REFRESH_MS = 1000;
     private static final int COMMAND_STATUS_REFRESH_MS = 500;
     private static final int MSG_ID = 1;
     private static final int COVER_TIMEOUT_MS = 10000;
     private static final int PLAYER_AVAILABILITY_RETRY_MS = 1000;
     private static final int PLAYER_AVAILABILITY_TIMEOUT_MS = 15000;
     private static final int RESTRICTED_PLAYER_RETRY_MS = 5000;
+    // Android Auto reports only single taps on custom actions, so two taps this close together
+    // on the rating button count as a double tap, which resets the rating to unrated.
+    private static final long RATE_DOUBLE_TAP_MS = 400;
     private static final String[] PREV_COMMAND = {"button", "jump_rew"};
     private static final String[] PLAY_COMMAND = {"play"};
     private static final String[] PAUSE_COMMAND = {"pause", "1"};
@@ -153,6 +158,9 @@ public class ControlService extends MediaBrowserServiceCompat {
             cometClient.getPlayerStatus(MainActivity.activePlayer);
         }
     };
+    private Boolean ratingsSupported = null; // null until checked whether Ratings Light is installed
+    private long lastRateTap = 0;
+    private boolean checkingRatingsSupport = false;
     // Play queue currently published to the media session (a window of the LMS playlist)
     private String queuePlayer = null;
     private double queueTimestamp = -1;
@@ -314,6 +322,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (null!=browseHelper) {
             browseHelper.reset();
         }
+        ratingsSupported = null;
     }
 
     private synchronized MediaSessionCompat.Callback getMediaSessionCallback() {
@@ -384,6 +393,14 @@ public class ControlService extends MediaBrowserServiceCompat {
                         quit();
                     } else if (ACTION_POWER.equals(action)) {
                         sendCommand(POWER_COMMAND);
+                    } else if (ACTION_RATE.equals(action)) {
+                        if (canRate()) {
+                            long now = SystemClock.elapsedRealtime();
+                            boolean doubleTap = now - lastRateTap < RATE_DOUBLE_TAP_MS;
+                            // A third quick tap starts a new cycle rather than another double tap.
+                            lastRateTap = doubleTap ? 0 : now;
+                            setRating(doubleTap ? 0 : Ratings.nextStars(lastStatus.rating));
+                        }
                     }
                 }
             };
@@ -408,9 +425,63 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (null!=lastStatus && lastStatus.playlistIndex >= 0 && null!=lastStatus.id && lastStatus.id.equals(MainActivity.activePlayer)) {
             builder.setActiveQueueItemId(lastStatus.playlistIndex);
         }
+        // Single rating button that cycles Unrated -> 5..1 stars. (Android Auto's overflow menu
+        // shows only 5 icon-only entries and can't be dismissed, so it is no use as a picker.)
+        if (canRate()) {
+            int rating = lastStatus.rating;
+            builder.addCustomAction(ACTION_RATE, getString(R.string.rating) + " " + Ratings.stars(rating),
+                    ratingIcon(Ratings.roundedStars(rating)));
+        }
         builder.addCustomAction(ACTION_POWER, getString(R.string.power), android.R.drawable.ic_lock_power_off)
                 .addCustomAction(ACTION_QUIT, getString(R.string.quit), R.drawable.ic_action_quit);
         return builder;
+    }
+
+    // The rating button's icon shows the current rating, as Android Auto doesn't display action labels.
+    private static int ratingIcon(int stars) {
+        switch (stars) {
+            case 1: return R.drawable.ic_rating_1;
+            case 2: return R.drawable.ic_rating_2;
+            case 3: return R.drawable.ic_rating_3;
+            case 4: return R.drawable.ic_rating_4;
+            case 5: return R.drawable.ic_rating_5;
+            default: return R.drawable.ic_star_border;
+        }
+    }
+
+    private boolean canRate() {
+        return Boolean.TRUE.equals(ratingsSupported) && null!=lastStatus && lastStatus.trackId > 0 &&
+                null!=lastStatus.id && lastStatus.id.equals(MainActivity.activePlayer);
+    }
+
+    private void checkRatingsSupport() {
+        if (null!=ratingsSupported || checkingRatingsSupport) {
+            return;
+        }
+        checkingRatingsSupport = true;
+        getBrowseExecutor().execute(() -> {
+            // Any failure counts as "not installed" until the next reconnect resets the check, so a
+            // slow or unreachable server doesn't get re-queried (blocking browsing) on every status update.
+            boolean supported = false;
+            try {
+                if (null==rpc) {
+                    rpc = new JsonRpc(getApplicationContext());
+                }
+                JSONObject response = rpc.sendMessageSync("", new String[]{"can", "ratingslight", "setrating", "?"}, 5000);
+                JSONObject result = null==response ? null : response.optJSONObject("result");
+                supported = null!=result && 1 == result.optInt("_can", 0);
+            } catch (Exception e) {
+                Utils.debug("Failed to check for Ratings Light: " + e.getMessage());
+            }
+            boolean value = supported;
+            handler.post(() -> {
+                checkingRatingsSupport = false;
+                ratingsSupported = value;
+                if (value) {
+                    updateMediaSession();
+                }
+            });
+        });
     }
 
     private void clearQueue() {
@@ -508,6 +579,22 @@ public class ControlService extends MediaBrowserServiceCompat {
         });
     }
 
+    private void setRating(int stars) {
+        if (!canRate() || stars < 0 || stars > Ratings.MAX_STARS) {
+            return;
+        }
+        final String player = MainActivity.activePlayer;
+        sendCommand(new String[]{"ratingslight", "setrating", "track_id:" + lastStatus.trackId, "rating:" + stars});
+        // Show the new rating immediately, then re-read the status to pick up what the server stored.
+        lastStatus.rating = stars * 20;
+        updateMediaSession();
+        handler.postDelayed(() -> {
+            if (null!=cometClient && player.equals(MainActivity.activePlayer)) {
+                cometClient.getPlayerStatus(player);
+            }
+        }, RATING_REFRESH_MS);
+    }
+
     private void networkConnectivityChanged() {
         Utils.debug("");
         resetBrowseHelper();
@@ -572,7 +659,10 @@ public class ControlService extends MediaBrowserServiceCompat {
             meta.putString(MediaMetadataCompat.METADATA_KEY_TITLE, lastStatus.title)
                     .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, lastStatus.title);
         }
+        checkRatingsSupport();
         updateQueue();
+        // No star text here: Android Auto shows the same subtitle in Now Playing and the split-screen
+        // card, so the rating is shown only by the rating button's icon.
         if (!Utils.isEmpty(lastStatus.artist)) {
             meta.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, lastStatus.artist)
                     .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, lastStatus.artist);
