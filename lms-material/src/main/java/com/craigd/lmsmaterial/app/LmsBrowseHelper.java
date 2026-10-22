@@ -944,7 +944,7 @@ public class LmsBrowseHelper {
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
         try {
             JSONObject resp = rpc.sendMessageSync("",
-                    new String[]{"players", "0", "10"}, TIMEOUT_MS);
+                    new String[]{"players", "0", "100"}, TIMEOUT_MS);
             if (null==resp) return items;
             JSONObject result = resp.optJSONObject("result");
             if (null==result) return items;
@@ -952,10 +952,14 @@ public class LmsBrowseHelper {
             if (null==loop) return items;
 
             String currentPlayer = MainActivity.activePlayer;
+            String restricted = PlayerAvailability.restrictedPlayer(prefs);
             for (int i = 0; i < loop.length(); i++) {
                 JSONObject player = loop.getJSONObject(i);
                 String id = player.optString("playerid", "");
                 String name = player.optString("name", "");
+                if (!PlayerAvailability.isAllowed(restricted, id, name)) {
+                    continue;
+                }
                 boolean isConnected = player.optInt("connected", 0) == 1;
                 boolean isActive = id.equals(currentPlayer);
                 if (isActive) {
@@ -1144,6 +1148,28 @@ public class LmsBrowseHelper {
     }
 
     private void switchPlayer(String playerId) {
+        String restricted = PlayerAvailability.restrictedPlayer(prefs);
+        if (null!=restricted && !restricted.equals(playerId)) {
+            // Restricted by ID or name - only switch if this ID belongs to the allowed player.
+            try {
+                JSONObject resp = rpc.sendMessageSync("", new String[]{"players", "0", "100"}, TIMEOUT_MS);
+                JSONObject result = null==resp ? null : resp.optJSONObject("result");
+                boolean allowed = false;
+                for (PlayerAvailability.Player player : PlayerAvailability.parse(null==result ? null : result.optJSONArray("players_loop"))) {
+                    if (player.id.equals(playerId) && PlayerAvailability.isAllowed(restricted, player.id, player.name)) {
+                        allowed = true;
+                        break;
+                    }
+                }
+                if (!allowed) {
+                    Utils.debug("Ignoring switch to non-default player " + playerId);
+                    return;
+                }
+            } catch (Exception e) {
+                Utils.debug("Failed to verify player " + playerId);
+                return;
+            }
+        }
         MainActivity.activePlayer = playerId;
         prefs.edit().putString(MainActivity.CURRENT_PLAYER_ID_KEY, playerId).apply();
     }
