@@ -40,12 +40,17 @@ public class LmsBrowseHelper {
     public static final String NEW_ARTISTS_ID = "__NEW_ARTISTS__";
     public static final String ALBUMS_NEW_ID = "__ALBUMS_NEW__";
     public static final String ALBUMS_RANDOM_ID = "__ALBUMS_RANDOM__";
+    public static final String ALBUMS_RECENTLY_PLAYED_ID = "__ALBUMS_RECENTLY_PLAYED__";
     public static final String ALBUMS_ALPHA_ID = "__ALBUMS_ALPHA__";
     public static final String ALBUMS_BY_YEAR_ID = "__ALBUMS_BY_YEAR__";
     public static final String FAVORITES_ID = "__FAVORITES__";
     public static final String PLAYLISTS_ID = "__PLAYLISTS__";
     public static final String PLAYERS_ID = "__PLAYERS__";
     public static final String LIBRARIES_ID = "__LIBRARIES__";
+    public static final String ALBUM_CLICK_PREF_KEY = "auto_album_click";
+    public static final String ALBUM_CLICK_TRACKS = "tracks";
+    public static final String ALBUM_CLICK_PLAY = "play";
+    private static final String ALBUM_TRACK_PREFIX = "albumtrack/";
     private static final String ALL_LIBRARIES_ID = "-1"; // LMS: no library restriction
 
     private static final String LIST_IMAGE_SIZE = "_300x300_f";
@@ -68,8 +73,19 @@ public class LmsBrowseHelper {
     private List<GroupIndex> albumArtistIndex = null;
     private List<GroupIndex> allArtistIndex = null;
     private List<GroupIndex> albumsAlphaIndex = null;
+    private volatile AlbumTracks lastAlbumTracks = null;
 
     private static final String[] RELEASE_TYPE_ORDER = {"ALBUM", "EP", "BOXSET", "BESTOF", "COMPILATION", "SINGLE", "APPEARANCE"};
+
+    private static class AlbumTracks {
+        final String albumId;
+        final List<String> trackIds;
+
+        AlbumTracks(String albumId, List<String> trackIds) {
+            this.albumId = albumId;
+            this.trackIds = trackIds;
+        }
+    }
 
     private static class GroupIndex {
         final String key;
@@ -96,6 +112,7 @@ public class LmsBrowseHelper {
         albumArtistIndex = null;
         allArtistIndex = null;
         albumsAlphaIndex = null;
+        lastAlbumTracks = null;
     }
 
     private boolean shouldGroupByReleaseType() {
@@ -150,6 +167,7 @@ public class LmsBrowseHelper {
         labels.put("PLAYERS", "Players");
         labels.put("NEW_ARTISTS", "New Artists");
         labels.put("RANDOM_ALBUMS", "Random Albums");
+        labels.put("RECENTLY_PLAYED_ALBUMS", "Recently Played Albums");
         labels.put("ARTISTS", "Artists");
         labels.put("ALBUMS", "Albums");
         labels.put("SONGS", "Songs");
@@ -230,6 +248,8 @@ public class LmsBrowseHelper {
             return loadAlbums("sort:new", parseOffset(parentMediaId, ALBUMS_NEW_ID));
         } else if (ALBUMS_RANDOM_ID.equals(parentMediaId) || parentMediaId.startsWith(ALBUMS_RANDOM_ID + "/")) {
             return loadAlbums("sort:random", parseOffset(parentMediaId, ALBUMS_RANDOM_ID));
+        } else if (ALBUMS_RECENTLY_PLAYED_ID.equals(parentMediaId) || parentMediaId.startsWith(ALBUMS_RECENTLY_PLAYED_ID + "/")) {
+            return loadAlbums("sort:recentlyplayed", parseOffset(parentMediaId, ALBUMS_RECENTLY_PLAYED_ID));
         } else if (FAVORITES_ID.equals(parentMediaId)) {
             return loadFavorites();
         } else if (PLAYLISTS_ID.equals(parentMediaId)) {
@@ -309,6 +329,7 @@ public class LmsBrowseHelper {
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
         items.add(buildBrowsableItem(ALBUMS_NEW_ID, getLabel("BROWSE_NEW_MUSIC"), drawableUri(R.drawable.ic_new_releases)));
         items.add(buildBrowsableItem(ALBUMS_RANDOM_ID, getLabel("RANDOM_ALBUMS"), drawableUri(R.drawable.ic_dice_release)));
+        items.add(buildBrowsableItem(ALBUMS_RECENTLY_PLAYED_ID, getLabel("RECENTLY_PLAYED_ALBUMS"), drawableUri(R.drawable.ic_history)));
         items.add(buildBrowsableItem(ALBUMS_ALPHA_ID, getLabel("BROWSE_BY_ALBUM") + " (A-Z)", drawableUri(R.drawable.ic_release)));
         items.add(buildBrowsableItem(ALBUMS_BY_YEAR_ID, getLabel("BROWSE_BY_ALBUM") + " (" + getLabel("YEAR") + ")", drawableUri(R.drawable.ic_release)));
         return items;
@@ -394,7 +415,7 @@ public class LmsBrowseHelper {
                         title = title + " (" + year + ")";
                     }
                     Uri artUri = albumArtUri(album);
-                    items.add(buildPlayableItem("album/" + id, title, artist, artUri));
+                    items.add(buildAlbumItem(id, title, artist, artUri));
                 }
                 if (group.count > 40) {
                     String showAllSubtitle = "Show all " + group.count + " albums";
@@ -537,7 +558,7 @@ public class LmsBrowseHelper {
                     title = title + " (" + year + ")";
                 }
                 Uri artUri = albumArtUri(album);
-                items.add(buildPlayableItem("album/" + id, title, artist, artUri));
+                items.add(buildAlbumItem(id, title, artist, artUri));
             }
 
             int nextPageOffset = pageOffset + PAGE_SIZE;
@@ -591,7 +612,7 @@ public class LmsBrowseHelper {
                     title = title + " (" + year + ")";
                 }
                 Uri artUri = albumArtUri(album);
-                items.add(buildPlayableItem("album/" + id, title, artist, artUri));
+                items.add(buildAlbumItem(id, title, artist, artUri));
             }
 
             int total = result.optInt("count", 0);
@@ -674,10 +695,12 @@ public class LmsBrowseHelper {
                     title = title + " (" + year + ")";
                 }
                 Uri artUri = albumArtUri(album);
-                items.add(buildPlayableItem("album/" + id, title, artist, artUri));
+                items.add(buildAlbumItem(id, title, artist, artUri));
             }
 
-            String baseId = "sort:new".equals(sortParam) ? ALBUMS_NEW_ID : ALBUMS_RANDOM_ID;
+            String baseId = "sort:new".equals(sortParam) ? ALBUMS_NEW_ID
+                    : "sort:recentlyplayed".equals(sortParam) ? ALBUMS_RECENTLY_PLAYED_ID
+                    : ALBUMS_RANDOM_ID;
             int total = result.optInt("count", 0);
             int nextOffset = offset + PAGE_SIZE;
             if (nextOffset < total) {
@@ -731,7 +754,7 @@ public class LmsBrowseHelper {
                     if (!groups.containsKey(group)) {
                         groups.put(group, new ArrayList<>());
                     }
-                    groups.get(group).add(buildPlayableItemWithGroup("album/" + id, title, null, artUri, releaseTypeHeader(group)));
+                    groups.get(group).add(buildAlbumItemWithGroup(id, title, null, artUri, releaseTypeHeader(group)));
                 }
 
                 for (String type : RELEASE_TYPE_ORDER) {
@@ -756,7 +779,7 @@ public class LmsBrowseHelper {
                         title = title + " (" + year + ")";
                     }
                     Uri artUri = albumArtUri(album);
-                    items.add(buildPlayableItem("album/" + id, title, null, artUri));
+                    items.add(buildAlbumItem(id, title, null, artUri));
                 }
             }
         } catch (Exception e) {
@@ -773,7 +796,7 @@ public class LmsBrowseHelper {
             params.add("0");
             params.add(String.valueOf(BROWSE_LIMIT));
             params.add("album_id:" + albumId);
-            params.add("tags:adlN");
+            params.add("tags:acdltN");
             params.add("sort:tracknum");
             addLibraryParam(params);
             JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), TIMEOUT_MS);
@@ -783,14 +806,22 @@ public class LmsBrowseHelper {
             JSONArray loop = result.optJSONArray("titles_loop");
             if (null==loop) return items;
 
-            items.add(buildPlayableItem("album/" + albumId, "\u25B6 Play All", null, null));
+            // Tapping a track queues the whole album (exactly the tracks listed, in this order) and
+            // starts playback at that track - so remember the list for playMediaId().
+            List<String> trackIds = new ArrayList<>();
             for (int i = 0; i < loop.length(); i++) {
                 JSONObject track = loop.getJSONObject(i);
-                String id = track.optString("id", "");
+                trackIds.add(track.optString("id", ""));
                 String title = track.optString("title", "");
-                String artist = track.optString("artist", "");
-                items.add(buildPlayableItem("track/" + id, title, artist, null));
+                String trackNum = track.optString("tracknum", "");
+                if (!trackNum.isEmpty()) {
+                    title = trackNum + ". " + title;
+                }
+                String coverId = track.optString("coverid", "");
+                Uri artUri = coverId.isEmpty() ? null : resolveImageUri("/music/" + coverId + "/cover");
+                items.add(buildPlayableItem(ALBUM_TRACK_PREFIX + albumId + "/" + i, title, track.optString("artist", ""), artUri));
             }
+            lastAlbumTracks = new AlbumTracks(albumId, trackIds);
         } catch (Exception e) {
             Utils.error("Failed to load album tracks", e);
         }
@@ -863,7 +894,7 @@ public class LmsBrowseHelper {
         if (url.contains("album.title")) {
             String albumId = lookupAlbumIdByName(name);
             if (null!=albumId) {
-                return buildPlayableItem("album/" + albumId, name, null, resolveImageUri(image));
+                return buildAlbumItem(albumId, name, null, resolveImageUri(image));
             }
         }
 
@@ -1077,7 +1108,7 @@ public class LmsBrowseHelper {
                                 title = title + " (" + year + ")";
                             }
                             Uri artUri = albumArtUri(album);
-                            items.add(buildPlayableItemWithGroup("album/" + id, title, artist, artUri, albumsGroup));
+                            items.add(buildAlbumItemWithGroup(id, title, artist, artUri, albumsGroup));
                         }
                     }
                 }
@@ -1126,7 +1157,19 @@ public class LmsBrowseHelper {
     }
 
     public boolean playMediaId(String mediaId) {
-        if (mediaId.startsWith("album/")) {
+        if (mediaId.startsWith(ALBUM_TRACK_PREFIX)) {
+            String[] parts = mediaId.substring(ALBUM_TRACK_PREFIX.length()).split("/");
+            if (parts.length != 2) {
+                return false;
+            }
+            AlbumTracks tracks = lastAlbumTracks;
+            if (null!=tracks && tracks.albumId.equals(parts[0])) {
+                sendLoadCommand("track_id:" + String.join(",", tracks.trackIds), "play_index:" + parts[1]);
+            } else {
+                sendLoadCommand("album_id:" + parts[0], "play_index:" + parts[1]);
+            }
+            return true;
+        } else if (mediaId.startsWith("album/")) {
             sendLoadCommand("album_id:" + mediaId.substring(6));
             return true;
         } else if (mediaId.startsWith("track/")) {
@@ -1199,6 +1242,7 @@ public class LmsBrowseHelper {
         albumArtistIndex = null;
         allArtistIndex = null;
         albumsAlphaIndex = null;
+        lastAlbumTracks = null;
     }
 
     private String normalizeTextkey(String textkey) {
@@ -1319,6 +1363,23 @@ public class LmsBrowseHelper {
             desc.setIconUri(iconUri);
         }
         return new MediaBrowserCompat.MediaItem(desc.build(), MediaBrowserCompat.MediaItem.FLAG_BROWSABLE | MediaBrowserCompat.MediaItem.FLAG_PLAYABLE);
+    }
+
+    // Depending on the setting, tapping an album either opens its track list or plays it straight away.
+    private boolean albumOpensTrackList() {
+        return !ALBUM_CLICK_PLAY.equals(prefs.getString(ALBUM_CLICK_PREF_KEY, ALBUM_CLICK_TRACKS));
+    }
+
+    private MediaBrowserCompat.MediaItem buildAlbumItem(String albumId, String title, String subtitle, Uri iconUri) {
+        return albumOpensTrackList()
+                ? buildBrowsableItem("album/" + albumId, title, subtitle, iconUri)
+                : buildPlayableItem("album/" + albumId, title, subtitle, iconUri);
+    }
+
+    private MediaBrowserCompat.MediaItem buildAlbumItemWithGroup(String albumId, String title, String subtitle, Uri iconUri, String groupTitle) {
+        return albumOpensTrackList()
+                ? buildBrowsableItemWithGroup("album/" + albumId, title, subtitle, iconUri, groupTitle)
+                : buildPlayableItemWithGroup("album/" + albumId, title, subtitle, iconUri, groupTitle);
     }
 
     private MediaBrowserCompat.MediaItem buildPlayableItem(String mediaId, String title, String subtitle, Uri iconUri) {
