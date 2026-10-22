@@ -37,6 +37,7 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.SystemClock;
 import android.support.v4.media.MediaBrowserCompat;
+import android.support.v4.media.MediaDescriptionCompat;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaSessionCompat;
 import android.support.v4.media.session.PlaybackStateCompat;
@@ -71,6 +72,7 @@ import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -151,6 +153,12 @@ public class ControlService extends MediaBrowserServiceCompat {
             cometClient.getPlayerStatus(MainActivity.activePlayer);
         }
     };
+    // Play queue currently published to the media session (a window of the LMS playlist)
+    private String queuePlayer = null;
+    private double queueTimestamp = -1;
+    private int queueStart = -1;
+    private int queueTotal = 0;
+    private boolean queueLoading = false;
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
         if (AutoTabOrder.PREF_KEY.equals(key)) {
             notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
@@ -339,6 +347,12 @@ public class ControlService extends MediaBrowserServiceCompat {
                 }
 
                 @Override
+                public void onSkipToQueueItem(long id) {
+                    // Queue item IDs are LMS playlist indexes
+                    sendCommand(new String[]{"playlist", "index", Long.toString(id)});
+                }
+
+                @Override
                 public void onPlayFromMediaId(String mediaId, Bundle extras) {
                     Utils.debug("playFromMediaId: " + mediaId);
                     if (getBrowseHelper().playMediaId(mediaId)) {
@@ -385,13 +399,113 @@ public class ControlService extends MediaBrowserServiceCompat {
     }
 
     private PlaybackStateCompat.Builder playbackStateBuilder(int state, long position, float speed) {
-        return new PlaybackStateCompat.Builder()
+        PlaybackStateCompat.Builder builder = new PlaybackStateCompat.Builder()
                 .setState(state, position, speed)
                 .setActions(PlaybackStateCompat.ACTION_PLAY | PlaybackStateCompat.ACTION_PAUSE
                         | PlaybackStateCompat.ACTION_SKIP_TO_NEXT | PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-                        | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_PLAY_PAUSE)
-                .addCustomAction(ACTION_POWER, getString(R.string.power), android.R.drawable.ic_lock_power_off)
+                        | PlaybackStateCompat.ACTION_SEEK_TO | PlaybackStateCompat.ACTION_PLAY_PAUSE
+                        | PlaybackStateCompat.ACTION_SKIP_TO_QUEUE_ITEM);
+        if (null!=lastStatus && lastStatus.playlistIndex >= 0 && null!=lastStatus.id && lastStatus.id.equals(MainActivity.activePlayer)) {
+            builder.setActiveQueueItemId(lastStatus.playlistIndex);
+        }
+        builder.addCustomAction(ACTION_POWER, getString(R.string.power), android.R.drawable.ic_lock_power_off)
                 .addCustomAction(ACTION_QUIT, getString(R.string.quit), R.drawable.ic_action_quit);
+        return builder;
+    }
+
+    private void clearQueue() {
+        if (null!=queuePlayer && null!=mediaSession) {
+            mediaSession.setQueue(null);
+        }
+        queuePlayer = null;
+        queueTimestamp = -1;
+        queueStart = -1;
+        queueTotal = 0;
+    }
+
+    // Reload the queue when the player or playlist changes, or the current track leaves the shown window.
+    private void updateQueue() {
+        final String player = lastStatus.id;
+        final int current = lastStatus.playlistIndex;
+        final double timestamp = lastStatus.playlistTimestamp;
+        if (current < 0) {
+            clearQueue();
+            return;
+        }
+        if (queueLoading || (player.equals(queuePlayer) && timestamp == queueTimestamp &&
+                PlayQueue.windowStart(current, queueTotal) == queueStart)) {
+            return;
+        }
+        queueLoading = true;
+        final int start = PlayQueue.windowStart(current, player.equals(queuePlayer) && timestamp == queueTimestamp ? queueTotal : Integer.MAX_VALUE);
+        getBrowseExecutor().execute(() -> {
+            List<MediaSessionCompat.QueueItem> items = null;
+            int total = 0;
+            int loadedStart = start;
+            try {
+                if (null==rpc) {
+                    rpc = new JsonRpc(getApplicationContext());
+                }
+                JSONObject response = rpc.sendMessageSync(player, new String[]{"status", Integer.toString(start),
+                        Integer.toString(PlayQueue.MAX_ITEMS), "tags:acdlKN"}, 10000);
+                JSONObject result = null==response ? null : response.optJSONObject("result");
+                if (null!=result) {
+                    total = result.optInt("playlist_tracks", 0);
+                    if (start > 0 && start != PlayQueue.windowStart(current, total)) {
+                        // First load of a large queue - fetch again now the size is known.
+                        loadedStart = PlayQueue.windowStart(current, total);
+                        response = rpc.sendMessageSync(player, new String[]{"status", Integer.toString(loadedStart),
+                                Integer.toString(PlayQueue.MAX_ITEMS), "tags:acdlKN"}, 10000);
+                        result = null==response ? null : response.optJSONObject("result");
+                    }
+                }
+                JSONArray loop = null==result ? null : result.optJSONArray("playlist_loop");
+                if (null!=loop) {
+                    String serverUrl = rpc.getServerUrl();
+                    items = new ArrayList<>();
+                    for (int i = 0; i < loop.length(); i++) {
+                        JSONObject track = loop.getJSONObject(i);
+                        long index = track.optLong("playlist index", loadedStart + i);
+                        String title = track.optString("title", "");
+                        String remoteTitle = track.optString("remote_title", "");
+                        if (!remoteTitle.isEmpty() && (title.isEmpty() || title.startsWith("http"))) {
+                            title = remoteTitle;
+                        }
+                        MediaDescriptionCompat.Builder desc = new MediaDescriptionCompat.Builder()
+                                .setMediaId("queue/" + index)
+                                .setTitle(title)
+                                .setSubtitle(track.optString("artist", ""));
+                        String coverId = track.optString("coverid", "");
+                        if (!coverId.isEmpty() && null!=serverUrl) {
+                            desc.setIconUri(ArtworkProvider.wrap(getApplicationContext(),
+                                    serverUrl + "/music/" + coverId + "/cover_300x300_f"));
+                        }
+                        items.add(new MediaSessionCompat.QueueItem(desc.build(), index));
+                    }
+                }
+            } catch (Exception e) {
+                Utils.debug("Failed to load play queue: " + e.getMessage());
+            }
+            final List<MediaSessionCompat.QueueItem> queue = items;
+            final int queueSize = total;
+            final int queueFrom = loadedStart;
+            handler.post(() -> {
+                queueLoading = false;
+                if (null==mediaSession || null==queue || !player.equals(MainActivity.activePlayer)) {
+                    return;
+                }
+                mediaSession.setQueue(queue);
+                mediaSession.setQueueTitle(getString(R.string.queue));
+                queuePlayer = player;
+                queueTimestamp = timestamp;
+                queueStart = queueFrom;
+                queueTotal = queueSize;
+                // Status may have moved on while loading (e.g. next track) - re-check.
+                if (null!=lastStatus && lastStatus.id.equals(player)) {
+                    updateQueue();
+                }
+            });
+        });
     }
 
     private void networkConnectivityChanged() {
@@ -434,6 +548,7 @@ public class ControlService extends MediaBrowserServiceCompat {
                     .putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, getFallback())
                     .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, getFallback())
                     .build());
+            clearQueue();
             return;
         }
         int state = "play".equals(lastStatus.mode) ? PlaybackStateCompat.STATE_PLAYING :
@@ -457,6 +572,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             meta.putString(MediaMetadataCompat.METADATA_KEY_TITLE, lastStatus.title)
                     .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, lastStatus.title);
         }
+        updateQueue();
         if (!Utils.isEmpty(lastStatus.artist)) {
             meta.putString(MediaMetadataCompat.METADATA_KEY_ARTIST, lastStatus.artist)
                     .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, lastStatus.artist);
