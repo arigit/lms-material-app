@@ -21,6 +21,7 @@ import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -301,6 +302,18 @@ public class SettingsActivity extends AppCompatActivity {
                         layout.setOrientation(LinearLayout.VERTICAL);
                         layout.setPadding(padding, padding, padding, padding / 2);
                         layout.addView(input);
+                        String currentPlayer = MainActivity.activePlayerName;
+                        if (null != currentPlayer && !currentPlayer.isEmpty()) {
+                            Button useCurrent = new Button(getContext(), null, android.R.attr.borderlessButtonStyle);
+                            useCurrent.setText(getString(R.string.use_current_player, currentPlayer));
+                            useCurrent.setOnClickListener(v -> {
+                                input.setText(currentPlayer);
+                                input.setSelection(currentPlayer.length());
+                            });
+                            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                            params.gravity = Gravity.END;
+                            layout.addView(useCurrent, params);
+                        }
                         builder.setView(layout);
 
                         builder.setPositiveButton(R.string.ok, (dialog, which) -> {
