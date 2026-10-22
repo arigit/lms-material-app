@@ -270,12 +270,28 @@ public class LmsBrowseHelper {
     private List<MediaBrowserCompat.MediaItem> loadRoot() {
         ensureLabelsLoaded();
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
-        items.add(buildBrowsableItem(ARTISTS_GROUP_ID, getLabel("BROWSE_BY_ARTIST"), drawableUri(R.drawable.ic_artist)));
-        items.add(buildBrowsableItem(RELEASES_GROUP_ID, getLabel("BROWSE_BY_ALBUM"), drawableUri(R.drawable.ic_release)));
-        items.add(buildBrowsableItem(FAVORITES_ID, getLabel("FAVORITES"), drawableUri(R.drawable.ic_favorite)));
-        items.add(buildBrowsableItem(PLAYLISTS_ID, getLabel("SAVED_PLAYLISTS"), drawableUri(R.drawable.ic_playlist)));
-        items.add(buildBrowsableItem(PLAYERS_ID, getLabel("PLAYERS"), drawableUri(R.drawable.ic_speaker)));
-        items.add(buildBrowsableItem(LIBRARIES_ID, getLabel("LIBRARY"), drawableUri(R.drawable.ic_library)));
+        for (String tab : AutoTabOrder.parse(prefs.getString(AutoTabOrder.PREF_KEY, null))) {
+            switch (tab) {
+                case AutoTabOrder.ALBUMS:
+                    items.add(buildBrowsableItem(RELEASES_GROUP_ID, getLabel("BROWSE_BY_ALBUM"), drawableUri(R.drawable.ic_release)));
+                    break;
+                case AutoTabOrder.ARTISTS:
+                    items.add(buildBrowsableItem(ARTISTS_GROUP_ID, getLabel("BROWSE_BY_ARTIST"), drawableUri(R.drawable.ic_artist)));
+                    break;
+                case AutoTabOrder.FAVORITES:
+                    items.add(buildBrowsableItem(FAVORITES_ID, getLabel("FAVORITES"), drawableUri(R.drawable.ic_favorite)));
+                    break;
+                case AutoTabOrder.PLAYLISTS:
+                    items.add(buildBrowsableItem(PLAYLISTS_ID, getLabel("SAVED_PLAYLISTS"), drawableUri(R.drawable.ic_playlist)));
+                    break;
+                case AutoTabOrder.PLAYERS:
+                    items.add(buildBrowsableItem(PLAYERS_ID, getLabel("PLAYERS"), drawableUri(R.drawable.ic_speaker)));
+                    break;
+                case AutoTabOrder.LIBRARIES:
+                    items.add(buildBrowsableItem(LIBRARIES_ID, getLabel("LIBRARY"), drawableUri(R.drawable.ic_library)));
+                    break;
+            }
+        }
         return items;
     }
 
@@ -291,10 +307,10 @@ public class LmsBrowseHelper {
     private List<MediaBrowserCompat.MediaItem> loadReleasesGroup() {
         ensureLabelsLoaded();
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
-        items.add(buildBrowsableItem(ALBUMS_ALPHA_ID, getLabel("BROWSE_BY_ALBUM") + " (A-Z)", drawableUri(R.drawable.ic_release)));
-        items.add(buildBrowsableItem(ALBUMS_BY_YEAR_ID, getLabel("BROWSE_BY_ALBUM") + " (" + getLabel("YEAR") + ")", drawableUri(R.drawable.ic_release)));
         items.add(buildBrowsableItem(ALBUMS_NEW_ID, getLabel("BROWSE_NEW_MUSIC"), drawableUri(R.drawable.ic_new_releases)));
         items.add(buildBrowsableItem(ALBUMS_RANDOM_ID, getLabel("RANDOM_ALBUMS"), drawableUri(R.drawable.ic_dice_release)));
+        items.add(buildBrowsableItem(ALBUMS_ALPHA_ID, getLabel("BROWSE_BY_ALBUM") + " (A-Z)", drawableUri(R.drawable.ic_release)));
+        items.add(buildBrowsableItem(ALBUMS_BY_YEAR_ID, getLabel("BROWSE_BY_ALBUM") + " (" + getLabel("YEAR") + ")", drawableUri(R.drawable.ic_release)));
         return items;
     }
 

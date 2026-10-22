@@ -152,7 +152,9 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
     };
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
-        if (MainActivity.CURRENT_PLAYER_ID_KEY.equals(key)) {
+        if (AutoTabOrder.PREF_KEY.equals(key)) {
+            notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
+        } else if (MainActivity.CURRENT_PLAYER_ID_KEY.equals(key)) {
             activePlayerChanged();
         } else if (SettingsActivity.SINGLE_PLAYER_PREF_KEY.equals(key) || SettingsActivity.DEFAULT_PLAYER_PREF_KEY.equals(key)) {
             applyPlayerRestriction();
