@@ -51,12 +51,15 @@ public class LmsBrowseHelper {
     public static final String ALBUM_CLICK_TRACKS = "tracks";
     public static final String ALBUM_CLICK_PLAY = "play";
     private static final String ALBUM_TRACK_PREFIX = "albumtrack/";
+    private static final String LETTERS_PREFIX = "letters/"; // + A-Z list ID: pick a letter of that list
     private static final String ALL_LIBRARIES_ID = "-1"; // LMS: no library restriction
 
     private static final String LIST_IMAGE_SIZE = "_300x300_f";
     private static final int BROWSE_LIMIT = 10000;
     private static final int PAGE_SIZE = 500;
-    private static final int GROUP_PREVIEW_COUNT = 39;
+    // Letters with more show this many, after a "Show all" entry. The whole A-Z list goes to Android Auto in
+    // one binder transaction (~0.5KB per item), which fails - leaving an endless spinner - above ~500KB.
+    private static final int GROUP_PREVIEW_COUNT = 15;
     private static final int INDEX_FETCH_LIMIT = 25000;
     private static final int SEARCH_LIMIT = 50;
     private static final int TIMEOUT_MS = 15000;
@@ -226,6 +229,8 @@ public class LmsBrowseHelper {
             return loadArtistsGroup();
         } else if (RELEASES_GROUP_ID.equals(parentMediaId)) {
             return loadReleasesGroup();
+        } else if (parentMediaId.startsWith(LETTERS_PREFIX)) {
+            return loadLetters(parentMediaId.substring(LETTERS_PREFIX.length()));
         } else if (ALBUM_ARTISTS_ID.equals(parentMediaId)) {
             return loadArtistsGrouped(ALBUM_ARTISTS_ID, true);
         } else if (parentMediaId.startsWith(ALBUM_ARTISTS_ID + ":")) {
@@ -362,18 +367,19 @@ public class LmsBrowseHelper {
                 }
             }
 
+            items.add(buildLettersItem(baseId));
+            // Each letter is its own section; large ones start with an entry for the full list.
             for (GroupIndex group : index) {
-                int displayCount = group.count > 40 ? GROUP_PREVIEW_COUNT : group.count;
+                int displayCount = group.count > GROUP_PREVIEW_COUNT + 1 ? GROUP_PREVIEW_COUNT : group.count;
+                if (displayCount < group.count) {
+                    items.add(buildShowAllItem(baseId + ":" + group.key, group, "artists"));
+                }
                 for (int i = 0; i < displayCount && (group.offset + i) < loop.length(); i++) {
                     JSONObject artist = loop.getJSONObject(group.offset + i);
                     String id = artist.optString("id", "");
                     String name = artist.optString("artist", "");
                     Uri artUri = resolveImageUri("/imageproxy/mai/artist/" + id + "/image_300x300_f");
-                    items.add(buildBrowsableItem("artist/" + id, name, null, artUri));
-                }
-                if (group.count > 40) {
-                    String showAllSubtitle = "Show all " + group.count + " artists";
-                    items.add(buildBrowsableItem(baseId + ":" + group.key, group.key, showAllSubtitle, null));
+                    items.add(buildBrowsableItemWithGroup("artist/" + id, name, artUri, group.key));
                 }
             }
         } catch (Exception e) {
@@ -403,8 +409,13 @@ public class LmsBrowseHelper {
                 albumsAlphaIndex = buildLetterIndexFromLoop(loop);
             }
 
+            items.add(buildLettersItem(ALBUMS_ALPHA_ID));
+            // Each letter is its own section; large ones start with an entry for the full list.
             for (GroupIndex group : albumsAlphaIndex) {
-                int displayCount = group.count > 40 ? GROUP_PREVIEW_COUNT : group.count;
+                int displayCount = group.count > GROUP_PREVIEW_COUNT + 1 ? GROUP_PREVIEW_COUNT : group.count;
+                if (displayCount < group.count) {
+                    items.add(buildShowAllItem(ALBUMS_ALPHA_ID + ":" + group.key, group, "albums"));
+                }
                 for (int i = 0; i < displayCount && (group.offset + i) < loop.length(); i++) {
                     JSONObject album = loop.getJSONObject(group.offset + i);
                     String id = album.optString("id", "");
@@ -415,11 +426,7 @@ public class LmsBrowseHelper {
                         title = title + " (" + year + ")";
                     }
                     Uri artUri = albumArtUri(album);
-                    items.add(buildAlbumItem(id, title, artist, artUri));
-                }
-                if (group.count > 40) {
-                    String showAllSubtitle = "Show all " + group.count + " albums";
-                    items.add(buildBrowsableItem(ALBUMS_ALPHA_ID + ":" + group.key, group.key, showAllSubtitle, null));
+                    items.add(buildAlbumItemWithGroup(id, title, artist, artUri, group.key));
                 }
             }
         } catch (Exception e) {
@@ -1287,6 +1294,43 @@ public class LmsBrowseHelper {
             Utils.error("Failed to build letter index", e);
         }
         return index;
+    }
+
+    private MediaBrowserCompat.MediaItem buildLettersItem(String listId) {
+        return buildBrowsableItem(LETTERS_PREFIX + listId, "Jump to letter", drawableUri(R.drawable.ic_letters));
+    }
+
+    /** The letters of an A-Z list, each opening that letter's full list. */
+    private List<MediaBrowserCompat.MediaItem> loadLetters(String listId) {
+        List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
+        String what = ALBUMS_ALPHA_ID.equals(listId) ? "albums" : "artists";
+        List<GroupIndex> index = letterIndex(listId);
+        if (null==index) {
+            // Index dropped (e.g. library changed) - rebuild it by loading the list.
+            if (ALBUMS_ALPHA_ID.equals(listId)) {
+                loadAlbumsAlphaGrouped();
+            } else if (ALBUM_ARTISTS_ID.equals(listId) || ALL_ARTISTS_ID.equals(listId)) {
+                loadArtistsGrouped(listId, ALBUM_ARTISTS_ID.equals(listId));
+            }
+            index = letterIndex(listId);
+        }
+        if (null==index) return items;
+        for (GroupIndex group : index) {
+            items.add(buildBrowsableItem(listId + ":" + group.key, group.key, group.count + " " + what, null));
+        }
+        return items;
+    }
+
+    private List<GroupIndex> letterIndex(String listId) {
+        if (ALBUMS_ALPHA_ID.equals(listId)) return albumsAlphaIndex;
+        if (ALBUM_ARTISTS_ID.equals(listId)) return albumArtistIndex;
+        if (ALL_ARTISTS_ID.equals(listId)) return allArtistIndex;
+        return null;
+    }
+
+    private MediaBrowserCompat.MediaItem buildShowAllItem(String mediaId, GroupIndex group, String what) {
+        return buildBrowsableItemWithGroup(mediaId, "Show all " + group.count + " " + what, null,
+                drawableUri(R.drawable.ic_show_all), group.key);
     }
 
     private GroupIndex findGroup(List<GroupIndex> index, String key) {
