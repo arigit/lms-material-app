@@ -7,17 +7,24 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 final class PlayerAvailability {
     static final class Player {
         final String id;
         final String name;
         final boolean connected;
+        final String ip; // host only, without the port
 
         Player(String id, String name, boolean connected) {
+            this(id, name, connected, "");
+        }
+
+        Player(String id, String name, boolean connected, String ip) {
             this.id = id;
             this.name = name;
             this.connected = connected;
+            this.ip = ip;
         }
     }
 
@@ -50,7 +57,8 @@ final class PlayerAvailability {
             JSONObject player = players.optJSONObject(i);
             if (player != null) {
                 parsed.add(new Player(player.optString("playerid"),
-                        player.optString("name"), player.optInt("connected", 0) == 1));
+                        player.optString("name"), player.optInt("connected", 0) == 1,
+                        player.optString("ip").split(":")[0]));
             }
         }
         return parsed;
@@ -81,6 +89,19 @@ final class PlayerAvailability {
         }
         for (Player player : players) {
             if (player.connected && playerId.equals(player.id)) {
+                return player;
+            }
+        }
+        return null;
+    }
+
+    // A connected player running on this device, e.g. the Squeezelite app.
+    static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses) {
+        if (players == null || localAddresses == null) {
+            return null;
+        }
+        for (Player player : players) {
+            if (player.connected && localAddresses.contains(player.ip)) {
                 return player;
             }
         }

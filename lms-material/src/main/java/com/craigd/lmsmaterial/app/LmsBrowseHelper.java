@@ -312,9 +312,18 @@ public class LmsBrowseHelper {
                 case AutoTabOrder.PLAYERS:
                     items.add(buildBrowsableItem(PLAYERS_ID, getLabel("PLAYERS"), drawableUri(R.drawable.ic_speaker)));
                     break;
-                case AutoTabOrder.LIBRARIES:
-                    items.add(buildBrowsableItem(LIBRARIES_ID, getLabel("LIBRARY"), drawableUri(R.drawable.ic_library)));
+                case AutoTabOrder.LIBRARIES: {
+                    // Name a selected library on the tab, so a filtered library can't go unnoticed.
+                    String label = getLabel("LIBRARY");
+                    String lib = getLibraryId();
+                    JSONArray libraries = null==lib ? null : fetchLibraries();
+                    String name = null==libraries ? null : libraryName(libraries, lib);
+                    if (null!=name) {
+                        label += " \u00b7 " + name;
+                    }
+                    items.add(buildBrowsableItem(LIBRARIES_ID, label, drawableUri(R.drawable.ic_library)));
                     break;
+                }
             }
         }
         return items;
@@ -1060,6 +1069,51 @@ public class LmsBrowseHelper {
         return items;
     }
 
+    /**
+     * Make sure the active library is one LMS knows about, else select "All": a library that was since
+     * removed or rebuilt would show none as selected while still filtering the lists. Returns true if the
+     * selection was changed.
+     */
+    public boolean ensureLibrarySelected() {
+        String currentLib = getLibraryId();
+        if (null==currentLib) {
+            return false;
+        }
+        JSONArray libraries = fetchLibraries();
+        if (null==libraries) {
+            return false;
+        }
+        if (null!=libraryName(libraries, currentLib)) {
+            return false;
+        }
+        Utils.debug("Unknown library " + currentLib + ", selecting all");
+        switchLibrary("__ALL__");
+        return true;
+    }
+
+    private JSONArray fetchLibraries() {
+        try {
+            JSONObject resp = rpc.sendMessageSync("", new String[]{"libraries"}, TIMEOUT_MS);
+            JSONObject result = null==resp ? null : resp.optJSONObject("result");
+            if (null==result) return null;
+            JSONArray loop = result.optJSONArray("folder_loop");
+            return null==loop ? new JSONArray() : loop;
+        } catch (Exception e) {
+            Utils.debug("Failed to load libraries: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static String libraryName(JSONArray libraries, String id) {
+        for (int i = 0; i < libraries.length(); i++) {
+            JSONObject lib = libraries.optJSONObject(i);
+            if (null!=lib && id.equals(lib.optString("id", ""))) {
+                return lib.optString("name", id);
+            }
+        }
+        return null;
+    }
+
     public List<MediaBrowserCompat.MediaItem> search(String query) {
         ensureLabelsLoaded();
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
@@ -1241,6 +1295,7 @@ public class LmsBrowseHelper {
     }
 
     private void switchLibrary(String libraryId) {
+        Utils.debug("Switch library to " + libraryId);
         if ("__ALL__".equals(libraryId)) {
             prefs.edit().remove(ACTIVE_LIBRARY_PREF_KEY).apply();
         } else {

@@ -778,23 +778,6 @@ public class MainActivity extends AppCompatActivity {
         sendMessageToService(ControlService.ACTIVE_PLAYER, new String[]{activePlayer, activePlayerName});
     }
 
-    @JavascriptInterface
-    public void updateLibrary(String libraryId) {
-        String current = sharedPreferences.getString(LmsBrowseHelper.ACTIVE_LIBRARY_PREF_KEY, null);
-        String updated = Utils.isEmpty(libraryId) || "-1".equals(libraryId) ? null : libraryId;
-        if ((null==current && null==updated) || (null!=current && current.equals(updated))) {
-            return;
-        }
-        SharedPreferences.Editor editor = sharedPreferences.edit();
-        if (null==updated) {
-            editor.remove(LmsBrowseHelper.ACTIVE_LIBRARY_PREF_KEY);
-        } else {
-            editor.putString(LmsBrowseHelper.ACTIVE_LIBRARY_PREF_KEY, updated);
-        }
-        editor.apply();
-        sendMessageToService(ControlService.LIBRARY_CHANGED, null);
-    }
-
     public static Set<String> getLocalIpAddresses() {
         Set<String> addresses = new TreeSet<>();
         try {
@@ -890,9 +873,6 @@ public class MainActivity extends AppCompatActivity {
             if (ControlService.isActive()) {
                 refreshControlService();
             }
-            runOnUiThread(() -> webView.evaluateJavascript(
-                    "try { NativeReceiver.updateLibrary(localStorage.getItem('lms-material::library') || '-1'); } catch(e) {}",
-                    null));
         } else {
             startDisconnectTimer();
         }

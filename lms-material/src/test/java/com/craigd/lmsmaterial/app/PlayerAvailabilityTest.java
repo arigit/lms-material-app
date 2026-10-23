@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -51,5 +52,19 @@ public class PlayerAvailabilityTest {
 
         players.set(1, new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", true));
         assertEquals("00:11:22:33:44:55", PlayerAvailability.findConnectedAllowedPlayer(players, "Phone").id);
+    }
+
+    @Test
+    public void localPlayerIsMatchedByConnectedIpAddress() {
+        List<PlayerAvailability.Player> players = new ArrayList<>(Arrays.asList(
+                new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", true, "192.168.1.20"),
+                new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", false, "192.168.1.30")));
+
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, Collections.singleton("192.168.1.30")));
+
+        players.set(1, new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", true, "192.168.1.30"));
+        assertEquals("00:11:22:33:44:55",
+                PlayerAvailability.findConnectedLocalPlayer(players, Collections.singleton("192.168.1.30")).id);
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, Collections.singleton("10.0.0.5")));
     }
 }

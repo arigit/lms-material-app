@@ -91,7 +91,6 @@ public class ControlService extends MediaBrowserServiceCompat {
     public static final int ACTIVE_PLAYER = 1;
     public static final int PLAYER_REFRESH = 2;
     public static final int CHECK_COMET_CONNECTION = 3;
-    public static final int LIBRARY_CHANGED = 4;
     private static final String ACTION_POWER = "power";
     private static final String ACTION_QUIT = "quit";
     private static final String ACTION_RATE = "rate";
@@ -102,6 +101,11 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final int PLAYER_AVAILABILITY_RETRY_MS = 1000;
     private static final int PLAYER_AVAILABILITY_TIMEOUT_MS = 15000;
     private static final int RESTRICTED_PLAYER_RETRY_MS = 5000;
+    private static final String ANDROID_AUTO_PKG = "com.google.android.projection.gearhead";
+    // Android Auto may ask for the root several times while starting - only react once.
+    private static final long AUTO_CONNECT_DEBOUNCE_MS = 30000;
+    // How long to wait for the local player app to show up in LMS after starting it.
+    private static final int AUTO_PLAYER_TIMEOUT_MS = 20000;
     // Android Auto reports only single taps on custom actions, so two taps this close together
     // on the rating button count as a double tap, which resets the rating to unrated.
     private static final long RATE_DOUBLE_TAP_MS = 400;
@@ -153,6 +157,10 @@ public class ControlService extends MediaBrowserServiceCompat {
     private long playerAvailabilityDeadline;
     private boolean playerWasUnavailable;
     private final Runnable playerAvailabilityCheck = this::checkPlayerAvailability;
+    private long lastAutoConnect = 0;
+    private long autoPlayerDeadline;
+    private boolean autoPlayerStarted;
+    private final Runnable autoPlayerCheck = this::checkAutoPlayer;
     private final Runnable commandStatusRefresh = () -> {
         if (null!=cometClient && !Utils.isEmpty(MainActivity.activePlayer)) {
             cometClient.getPlayerStatus(MainActivity.activePlayer);
@@ -222,9 +230,6 @@ public class ControlService extends MediaBrowserServiceCompat {
             } else if (msg.what == CHECK_COMET_CONNECTION && null!=srv.cometClient) {
                 srv.resetBrowseHelper();
                 srv.cometClient.reconnectIfChanged();
-            } else if (msg.what == LIBRARY_CHANGED) {
-                srv.resetBrowseHelper();
-                srv.notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
             } else {
                 super.handleMessage(msg);
             }
@@ -258,6 +263,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     public BrowserRoot onGetRoot(@NonNull String clientPackageName, int clientUid, @Nullable Bundle rootHints) {
         Bundle extras = new Bundle();
         extras.putBoolean("android.media.browse.SEARCH_SUPPORTED", true);
+        if (ANDROID_AUTO_PKG.equals(clientPackageName)) {
+            androidAutoConnected();
+        }
         return new BrowserRoot(LmsBrowseHelper.ROOT_ID, extras);
     }
 
@@ -280,7 +288,10 @@ public class ControlService extends MediaBrowserServiceCompat {
                         notifyChildrenChanged(LmsBrowseHelper.PLAYERS_ID);
                     });
                 } else if (parentId.startsWith("library/")) {
-                    handler.post(() -> notifyChildrenChanged(LmsBrowseHelper.LIBRARIES_ID));
+                    handler.post(() -> {
+                        notifyChildrenChanged(LmsBrowseHelper.LIBRARIES_ID);
+                        notifyChildrenChanged(LmsBrowseHelper.ROOT_ID); // tab shows the library's name
+                    });
                 }
             } catch (Exception e) {
                 Utils.error("Failed to load children for: " + parentId, e);
@@ -785,6 +796,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             browseExecutor = null;
         }
         cancelPlayerAvailabilityCheck();
+        handler.removeCallbacks(autoPlayerCheck);
         handler.removeCallbacks(commandStatusRefresh);
         browseHelper = null;
         if (null!=mediaSession) {
@@ -982,6 +994,109 @@ public class ControlService extends MediaBrowserServiceCompat {
             // The default player may start (e.g. Squeezelite on car connect) at any time - keep looking.
             handler.postDelayed(playerAvailabilityCheck, RESTRICTED_PLAYER_RETRY_MS);
         }
+    }
+
+    /**
+     * Android Auto connected: check the selected library, start the player app (if set to auto start), and
+     * control it if it is the default player or nothing else is connected.
+     */
+    private void androidAutoConnected() {
+        long now = SystemClock.elapsedRealtime();
+        if (0!=lastAutoConnect && now - lastAutoConnect < AUTO_CONNECT_DEBOUNCE_MS) {
+            return;
+        }
+        lastAutoConnect = now;
+        Utils.debug("Android Auto connected");
+        // Queued before Android Auto's first loadChildren, so the root and its lists use a valid selection.
+        getBrowseExecutor().execute(() -> {
+            if (getBrowseHelper().ensureLibrarySelected()) {
+                handler.post(() -> {
+                    notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
+                    notifyChildrenChanged(LmsBrowseHelper.LIBRARIES_ID);
+                });
+            }
+        });
+
+        // The player app is only started when "Auto start player" is enabled, as on app start.
+        autoPlayerStarted = prefs.getBoolean(SettingsActivity.AUTO_START_PLAYER_APP_PREF_KEY, false) &&
+                new LocalPlayer(prefs, getApplicationContext()).start();
+        if (null!=restrictedPlayer()) {
+            // Only the default player may be used - the availability check waits for that one.
+            startPlayerAvailabilityCheck();
+            return;
+        }
+        cancelPlayerAvailabilityCheck();
+        autoPlayerDeadline = now + AUTO_PLAYER_TIMEOUT_MS;
+        handler.removeCallbacks(autoPlayerCheck);
+        handler.post(autoPlayerCheck);
+    }
+
+    private void checkAutoPlayer() {
+        getBrowseExecutor().execute(() -> {
+            List<PlayerAvailability.Player> players = null;
+            try {
+                if (null==rpc) {
+                    rpc = new JsonRpc(getApplicationContext());
+                }
+                JSONObject response = rpc.sendMessageSync("", new String[]{"players", "0", "100"}, 3000);
+                JSONObject result = null==response ? null : response.optJSONObject("result");
+                if (null!=result) {
+                    players = PlayerAvailability.parse(result.optJSONArray("players_loop"));
+                }
+            } catch (Exception e) {
+                Utils.debug("Failed to check players: " + e.getMessage());
+            }
+            List<PlayerAvailability.Player> checked = players;
+            handler.post(() -> autoPlayerChecked(checked));
+        });
+    }
+
+    private void autoPlayerChecked(List<PlayerAvailability.Player> players) {
+        String defaultPlayer = prefs.getString(SettingsActivity.DEFAULT_PLAYER_PREF_KEY, null);
+        defaultPlayer = null==defaultPlayer || defaultPlayer.trim().isEmpty() ? null : defaultPlayer.trim();
+        PlayerAvailability.Player active = PlayerAvailability.findConnectedPlayer(players, MainActivity.activePlayer);
+        PlayerAvailability.Player local = autoPlayerStarted
+                ? PlayerAvailability.findConnectedLocalPlayer(players, MainActivity.getLocalIpAddresses())
+                : null;
+        boolean activeIsDefault = null!=active && null!=defaultPlayer && PlayerAvailability.isAllowed(defaultPlayer, active.id, active.name);
+
+        if (null!=local) {
+            boolean localIsDefault = null!=defaultPlayer && PlayerAvailability.isAllowed(defaultPlayer, local.id, local.name);
+            useAutoPlayer(localIsDefault || null==active || local.id.equals(active.id) ? local : active);
+            return;
+        }
+        if (autoPlayerStarted && !activeIsDefault && SystemClock.elapsedRealtime() < autoPlayerDeadline) {
+            // Give the player app a few seconds to start and register with LMS.
+            handler.postDelayed(autoPlayerCheck, PLAYER_AVAILABILITY_RETRY_MS);
+            return;
+        }
+        if (null==active && null!=defaultPlayer && null!=players) {
+            active = PlayerAvailability.findConnectedAllowedPlayer(players, defaultPlayer);
+        }
+        if (null!=active) {
+            useAutoPlayer(active);
+        } else {
+            Utils.debug("No connected player for Android Auto");
+            startPlayerAvailabilityCheck();
+        }
+    }
+
+    private void useAutoPlayer(PlayerAvailability.Player player) {
+        boolean changed = !player.id.equals(MainActivity.activePlayer);
+        Utils.debug("Android Auto player " + player.name + ", id:" + player.id + (changed ? " (selected)" : ""));
+        MainActivity.activePlayer = player.id;
+        MainActivity.activePlayerName = player.name;
+        if (changed) {
+            prefs.edit().putString(MainActivity.CURRENT_PLAYER_ID_KEY, player.id).apply();
+        }
+        cancelPlayerAvailabilityCheck();
+        // Always reconnect: the status subscription may have been made before the player existed in LMS,
+        // leaving it shown as disconnected.
+        cometClient.setPlayer(player.id);
+        cometClient.reconnect();
+        updateMediaSession();
+        updateNotification();
+        notifyChildrenChanged(LmsBrowseHelper.PLAYERS_ID);
     }
 
     private void configurePlaybackVolume() {
