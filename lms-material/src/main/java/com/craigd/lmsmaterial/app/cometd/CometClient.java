@@ -345,6 +345,11 @@ public class CometClient {
         } else {
             data.put("unsubscribe", responseChannel);
         }
+        if (null==bayeuxClient) {
+            // Queued just before a reconnect dropped the client; onConnected() re-subscribes to the player.
+            Utils.debug("Not connected, dropping publish to " + channel);
+            return;
+        }
         bayeuxClient.getChannel(channel).publish(data, publishListener);
     }
 
