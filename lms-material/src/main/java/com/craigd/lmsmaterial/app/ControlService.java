@@ -165,7 +165,6 @@ public class ControlService extends MediaBrowserServiceCompat {
     private String queuePlayer = null;
     private double queueTimestamp = -1;
     private int queueStart = -1;
-    private int queueTotal = 0;
     private boolean queueLoading = false;
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
         if (AutoTabOrder.PREF_KEY.equals(key)) {
@@ -491,10 +490,9 @@ public class ControlService extends MediaBrowserServiceCompat {
         queuePlayer = null;
         queueTimestamp = -1;
         queueStart = -1;
-        queueTotal = 0;
     }
 
-    // Reload the queue when the player or playlist changes, or the current track leaves the shown window.
+    // Reload the queue when the player, playlist or current track changes, so the window starts at the current track.
     private void updateQueue() {
         final String player = lastStatus.id;
         final int current = lastStatus.playlistIndex;
@@ -504,15 +502,13 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         if (queueLoading || (player.equals(queuePlayer) && timestamp == queueTimestamp &&
-                PlayQueue.windowStart(current, queueTotal) == queueStart)) {
+                PlayQueue.windowStart(current) == queueStart)) {
             return;
         }
         queueLoading = true;
-        final int start = PlayQueue.windowStart(current, player.equals(queuePlayer) && timestamp == queueTimestamp ? queueTotal : Integer.MAX_VALUE);
+        final int start = PlayQueue.windowStart(current);
         getBrowseExecutor().execute(() -> {
             List<MediaSessionCompat.QueueItem> items = null;
-            int total = 0;
-            int loadedStart = start;
             try {
                 if (null==rpc) {
                     rpc = new JsonRpc(getApplicationContext());
@@ -520,23 +516,13 @@ public class ControlService extends MediaBrowserServiceCompat {
                 JSONObject response = rpc.sendMessageSync(player, new String[]{"status", Integer.toString(start),
                         Integer.toString(PlayQueue.MAX_ITEMS), "tags:acdlKN"}, 10000);
                 JSONObject result = null==response ? null : response.optJSONObject("result");
-                if (null!=result) {
-                    total = result.optInt("playlist_tracks", 0);
-                    if (start > 0 && start != PlayQueue.windowStart(current, total)) {
-                        // First load of a large queue - fetch again now the size is known.
-                        loadedStart = PlayQueue.windowStart(current, total);
-                        response = rpc.sendMessageSync(player, new String[]{"status", Integer.toString(loadedStart),
-                                Integer.toString(PlayQueue.MAX_ITEMS), "tags:acdlKN"}, 10000);
-                        result = null==response ? null : response.optJSONObject("result");
-                    }
-                }
                 JSONArray loop = null==result ? null : result.optJSONArray("playlist_loop");
                 if (null!=loop) {
                     String serverUrl = rpc.getServerUrl();
                     items = new ArrayList<>();
                     for (int i = 0; i < loop.length(); i++) {
                         JSONObject track = loop.getJSONObject(i);
-                        long index = track.optLong("playlist index", loadedStart + i);
+                        long index = track.optLong("playlist index", start + i);
                         String title = track.optString("title", "");
                         String remoteTitle = track.optString("remote_title", "");
                         if (!remoteTitle.isEmpty() && (title.isEmpty() || title.startsWith("http"))) {
@@ -558,8 +544,6 @@ public class ControlService extends MediaBrowserServiceCompat {
                 Utils.debug("Failed to load play queue: " + e.getMessage());
             }
             final List<MediaSessionCompat.QueueItem> queue = items;
-            final int queueSize = total;
-            final int queueFrom = loadedStart;
             handler.post(() -> {
                 queueLoading = false;
                 if (null==mediaSession || null==queue || !player.equals(MainActivity.activePlayer)) {
@@ -569,8 +553,7 @@ public class ControlService extends MediaBrowserServiceCompat {
                 mediaSession.setQueueTitle(getString(R.string.queue));
                 queuePlayer = player;
                 queueTimestamp = timestamp;
-                queueStart = queueFrom;
-                queueTotal = queueSize;
+                queueStart = start;
                 // Status may have moved on while loading (e.g. next track) - re-check.
                 if (null!=lastStatus && lastStatus.id.equals(player)) {
                     updateQueue();

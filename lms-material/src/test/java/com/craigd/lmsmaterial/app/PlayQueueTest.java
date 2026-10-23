@@ -6,19 +6,15 @@ import static org.junit.Assert.assertEquals;
 
 public class PlayQueueTest {
     @Test
-    public void smallQueueIsShownInFull() {
-        assertEquals(0, PlayQueue.windowStart(3, 13));
-        assertEquals(0, PlayQueue.windowStart(99, 100));
+    public void startsJustBeforeCurrentTrack() {
+        assertEquals(2, PlayQueue.windowStart(3));
+        assertEquals(499, PlayQueue.windowStart(500));
+        assertEquals(994, PlayQueue.windowStart(995));
     }
 
     @Test
-    public void largeQueueStartsJustBeforeCurrentTrack() {
-        assertEquals(0, PlayQueue.windowStart(5, 1000));
-        assertEquals(490, PlayQueue.windowStart(500, 1000));
-    }
-
-    @Test
-    public void largeQueueWindowStaysWithinPlaylist() {
-        assertEquals(900, PlayQueue.windowStart(995, 1000));
+    public void firstTrackStartsAtTop() {
+        assertEquals(0, PlayQueue.windowStart(0));
+        assertEquals(0, PlayQueue.windowStart(1));
     }
 }
