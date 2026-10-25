@@ -17,6 +17,8 @@
         <package android:name="de.bluegaspode.squeezeplayer" />
         <package android:name="org.lyrion.squeezelite" />
         <package android:name="org.lyrion.squeezelite.ar" />
+        <!-- Android Auto, for its car connection state -->
+        <package android:name="com.google.android.projection.gearhead" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/pdf" />
