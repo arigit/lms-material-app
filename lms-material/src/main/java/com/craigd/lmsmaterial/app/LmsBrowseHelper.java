@@ -263,12 +263,6 @@ public class LmsBrowseHelper {
             return loadPlayers();
         } else if (LIBRARIES_ID.equals(parentMediaId)) {
             return loadLibraries();
-        } else if (parentMediaId.startsWith("player/")) {
-            switchPlayer(parentMediaId.substring(7));
-            return loadPlayers();
-        } else if (parentMediaId.startsWith("library/")) {
-            switchLibrary(parentMediaId.substring(8));
-            return loadLibraries();
         } else if (parentMediaId.startsWith("artist/")) {
             return loadArtistAlbums(parentMediaId.substring(7));
         } else if (parentMediaId.startsWith("album/")) {
@@ -312,9 +306,18 @@ public class LmsBrowseHelper {
                 case AutoTabOrder.PLAYERS:
                     items.add(buildBrowsableItem(PLAYERS_ID, getLabel("PLAYERS"), drawableUri(R.drawable.ic_speaker)));
                     break;
-                case AutoTabOrder.LIBRARIES:
-                    items.add(buildBrowsableItem(LIBRARIES_ID, getLabel("LIBRARY"), drawableUri(R.drawable.ic_library)));
+                case AutoTabOrder.LIBRARIES: {
+                    // Name a selected library on the tab, so a filtered library can't go unnoticed.
+                    String label = getLabel("LIBRARY");
+                    String lib = getLibraryId();
+                    JSONArray libraries = null==lib ? null : fetchLibraries();
+                    String name = null==libraries ? null : libraryName(libraries, lib);
+                    if (null!=name) {
+                        label += " \u00b7 " + name;
+                    }
+                    items.add(buildBrowsableItem(LIBRARIES_ID, label, drawableUri(R.drawable.ic_library)));
                     break;
+                }
             }
         }
         return items;
@@ -1021,7 +1024,7 @@ public class LmsBrowseHelper {
                 }
                 String title = (isActive ? "\u2713 " : "") + name;
                 String subtitle = isConnected ? "Connected" : "Disconnected";
-                items.add(buildBrowsableItem("player/" + id, title, subtitle, null));
+                items.add(buildPlayableItem("player/" + id, title, subtitle, null));
             }
         } catch (Exception e) {
             Utils.error("Failed to load players", e);
@@ -1043,7 +1046,7 @@ public class LmsBrowseHelper {
             String currentLib = getLibraryId();
             boolean hasSelection = (null!=currentLib);
 
-            items.add(buildBrowsableItem("library/__ALL__",
+            items.add(buildPlayableItem("library/__ALL__",
                     (!hasSelection ? "\u2713 " : "") + getLabel("ALL_TRACKS"), null, null));
 
             for (int i = 0; i < loop.length(); i++) {
@@ -1052,12 +1055,57 @@ public class LmsBrowseHelper {
                 String name = lib.optString("name", "");
                 boolean isActive = id.equals(currentLib);
                 String title = (isActive ? "\u2713 " : "") + name;
-                items.add(buildBrowsableItem("library/" + id, title, null, null));
+                items.add(buildPlayableItem("library/" + id, title, null, null));
             }
         } catch (Exception e) {
             Utils.error("Failed to load libraries", e);
         }
         return items;
+    }
+
+    /**
+     * Make sure the active library is one LMS knows about, else select "All": a library that was since
+     * removed or rebuilt would show none as selected while still filtering the lists. Returns true if the
+     * selection was changed.
+     */
+    public boolean ensureLibrarySelected() {
+        String currentLib = getLibraryId();
+        if (null==currentLib) {
+            return false;
+        }
+        JSONArray libraries = fetchLibraries();
+        if (null==libraries) {
+            return false;
+        }
+        if (null!=libraryName(libraries, currentLib)) {
+            return false;
+        }
+        Utils.debug("Unknown library " + currentLib + ", selecting all");
+        switchLibrary("__ALL__");
+        return true;
+    }
+
+    private JSONArray fetchLibraries() {
+        try {
+            JSONObject resp = rpc.sendMessageSync("", new String[]{"libraries"}, TIMEOUT_MS);
+            JSONObject result = null==resp ? null : resp.optJSONObject("result");
+            if (null==result) return null;
+            JSONArray loop = result.optJSONArray("folder_loop");
+            return null==loop ? new JSONArray() : loop;
+        } catch (Exception e) {
+            Utils.debug("Failed to load libraries: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static String libraryName(JSONArray libraries, String id) {
+        for (int i = 0; i < libraries.length(); i++) {
+            JSONObject lib = libraries.optJSONObject(i);
+            if (null!=lib && id.equals(lib.optString("id", ""))) {
+                return lib.optString("name", id);
+            }
+        }
+        return null;
     }
 
     public List<MediaBrowserCompat.MediaItem> search(String query) {
@@ -1213,6 +1261,23 @@ public class LmsBrowseHelper {
         }
     }
 
+    /**
+     * Select the player or library of a tapped "player/" or "library/" item; returns false for other items.
+     * These are playable items rather than browsable ones because Android Auto preloads the children of
+     * browsable items (several levels deep) - which selected whichever entry it happened to load last.
+     * A playable item is only ever "played" by an explicit tap.
+     */
+    public boolean selectMediaId(String mediaId) {
+        if (mediaId.startsWith("player/")) {
+            switchPlayer(mediaId.substring(7));
+            return true;
+        } else if (mediaId.startsWith("library/")) {
+            switchLibrary(mediaId.substring(8));
+            return true;
+        }
+        return false;
+    }
+
     private void switchPlayer(String playerId) {
         String restricted = PlayerAvailability.restrictedPlayer(prefs);
         if (null!=restricted && !restricted.equals(playerId)) {
@@ -1241,6 +1306,7 @@ public class LmsBrowseHelper {
     }
 
     private void switchLibrary(String libraryId) {
+        Utils.debug("Switch library to " + libraryId);
         if ("__ALL__".equals(libraryId)) {
             prefs.edit().remove(ACTIVE_LIBRARY_PREF_KEY).apply();
         } else {

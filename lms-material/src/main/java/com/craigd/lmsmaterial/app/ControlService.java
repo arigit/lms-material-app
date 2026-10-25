@@ -91,7 +91,6 @@ public class ControlService extends MediaBrowserServiceCompat {
     public static final int ACTIVE_PLAYER = 1;
     public static final int PLAYER_REFRESH = 2;
     public static final int CHECK_COMET_CONNECTION = 3;
-    public static final int LIBRARY_CHANGED = 4;
     private static final String ACTION_POWER = "power";
     private static final String ACTION_QUIT = "quit";
     private static final String ACTION_RATE = "rate";
@@ -102,6 +101,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final int PLAYER_AVAILABILITY_RETRY_MS = 1000;
     private static final int PLAYER_AVAILABILITY_TIMEOUT_MS = 15000;
     private static final int RESTRICTED_PLAYER_RETRY_MS = 5000;
+    private static final String ANDROID_AUTO_PKG = "com.google.android.projection.gearhead";
+    // Android Auto may ask for the root several times while starting - only react once.
+    private static final long AUTO_CONNECT_DEBOUNCE_MS = 30000;
     // Android Auto reports only single taps on custom actions, so two taps this close together
     // on the rating button count as a double tap, which resets the rating to unrated.
     private static final long RATE_DOUBLE_TAP_MS = 400;
@@ -153,6 +155,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     private long playerAvailabilityDeadline;
     private boolean playerWasUnavailable;
     private final Runnable playerAvailabilityCheck = this::checkPlayerAvailability;
+    private long lastAutoConnect = 0;
     private final Runnable commandStatusRefresh = () -> {
         if (null!=cometClient && !Utils.isEmpty(MainActivity.activePlayer)) {
             cometClient.getPlayerStatus(MainActivity.activePlayer);
@@ -223,9 +226,6 @@ public class ControlService extends MediaBrowserServiceCompat {
             } else if (msg.what == CHECK_COMET_CONNECTION && null!=srv.cometClient) {
                 srv.resetBrowseHelper();
                 srv.cometClient.reconnectIfChanged();
-            } else if (msg.what == LIBRARY_CHANGED) {
-                srv.resetBrowseHelper();
-                srv.notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
             } else {
                 super.handleMessage(msg);
             }
@@ -259,6 +259,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     public BrowserRoot onGetRoot(@NonNull String clientPackageName, int clientUid, @Nullable Bundle rootHints) {
         Bundle extras = new Bundle();
         extras.putBoolean("android.media.browse.SEARCH_SUPPORTED", true);
+        if (ANDROID_AUTO_PKG.equals(clientPackageName)) {
+            androidAutoConnected();
+        }
         return new BrowserRoot(LmsBrowseHelper.ROOT_ID, extras);
     }
 
@@ -269,25 +272,27 @@ public class ControlService extends MediaBrowserServiceCompat {
             try {
                 List<MediaBrowserCompat.MediaItem> items = getBrowseHelper().loadChildren(parentId);
                 result.sendResult(items);
-                if (parentId.startsWith("player/")) {
-                    handler.post(() -> {
-                        if (null!=cometClient) {
-                            cometClient.setPlayer(MainActivity.activePlayer);
-                            if (!cometClient.isConnected()) {
-                                cometClient.connect();
-                            }
-                        }
-                        updateNotification();
-                        notifyChildrenChanged(LmsBrowseHelper.PLAYERS_ID);
-                    });
-                } else if (parentId.startsWith("library/")) {
-                    handler.post(() -> notifyChildrenChanged(LmsBrowseHelper.LIBRARIES_ID));
-                }
             } catch (Exception e) {
                 Utils.error("Failed to load children for: " + parentId, e);
                 result.sendResult(Collections.emptyList());
             }
         });
+    }
+
+    private void selectionChanged(boolean player) {
+        if (player) {
+            if (null!=cometClient) {
+                cometClient.setPlayer(MainActivity.activePlayer);
+                if (!cometClient.isConnected()) {
+                    cometClient.connect();
+                }
+            }
+            updateNotification();
+            notifyChildrenChanged(LmsBrowseHelper.PLAYERS_ID);
+        } else {
+            notifyChildrenChanged(LmsBrowseHelper.LIBRARIES_ID);
+            notifyChildrenChanged(LmsBrowseHelper.ROOT_ID); // tab shows the library's name
+        }
     }
 
     @Override
@@ -364,6 +369,16 @@ public class ControlService extends MediaBrowserServiceCompat {
                 @Override
                 public void onPlayFromMediaId(String mediaId, Bundle extras) {
                     Utils.debug("playFromMediaId: " + mediaId);
+                    if (mediaId.startsWith("player/") || mediaId.startsWith("library/")) {
+                        // A tapped player or library entry: select it, nothing is played.
+                        boolean player = mediaId.startsWith("player/");
+                        getBrowseExecutor().execute(() -> {
+                            if (getBrowseHelper().selectMediaId(mediaId)) {
+                                handler.post(() -> selectionChanged(player));
+                            }
+                        });
+                        return;
+                    }
                     if (getBrowseHelper().playMediaId(mediaId)) {
                         setBuffering();
                     }
@@ -999,6 +1014,27 @@ public class ControlService extends MediaBrowserServiceCompat {
             // The default player may start (e.g. Squeezelite on car connect) at any time - keep looking.
             handler.postDelayed(playerAvailabilityCheck, RESTRICTED_PLAYER_RETRY_MS);
         }
+    }
+
+    /**
+     * Android Auto connected: make sure the selected library still exists.
+     */
+    private void androidAutoConnected() {
+        long now = SystemClock.elapsedRealtime();
+        if (0!=lastAutoConnect && now - lastAutoConnect < AUTO_CONNECT_DEBOUNCE_MS) {
+            return;
+        }
+        lastAutoConnect = now;
+        Utils.debug("Android Auto connected");
+        // Queued before Android Auto's first loadChildren, so the root and its lists use a valid selection.
+        getBrowseExecutor().execute(() -> {
+            if (getBrowseHelper().ensureLibrarySelected()) {
+                handler.post(() -> {
+                    notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
+                    notifyChildrenChanged(LmsBrowseHelper.LIBRARIES_ID);
+                });
+            }
+        });
     }
 
     private void configurePlaybackVolume() {
