@@ -511,6 +511,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Utils.startFileLog(this);
         Utils.debug("MainActivity.onCreate");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             requestWindowFeature(Window.FEATURE_NO_TITLE);

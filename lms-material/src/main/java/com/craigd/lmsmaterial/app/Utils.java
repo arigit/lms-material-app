@@ -37,17 +37,52 @@ import androidx.core.app.NotificationManagerCompat;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import io.github.muddz.styleabletoast.StyleableToast;
 
 public class Utils {
     public static final String LOG_TAG = "LMS";
+    // Debug builds also write the log to files/lms.log (and lms.log.1), as the phone's log only keeps a few hours.
+    private static final long MAX_LOG_FILE_SIZE = 4 * 1024 * 1024;
+    private static File logFile;
+    private static ExecutorService logExecutor;
+
+    public static synchronized void startFileLog(Context context) {
+        if (BuildConfig.DEBUG && null==logFile) {
+            logFile = new File(context.getFilesDir(), "lms.log");
+            logExecutor = Executors.newSingleThreadExecutor();
+        }
+    }
+
+    private static void logToFile(String level, String message, Throwable t) {
+        if (null==logExecutor) {
+            return;
+        }
+        long time = System.currentTimeMillis();
+        String thrown = null==t ? "" : "\n" + Log.getStackTraceString(t);
+        logExecutor.execute(() -> {
+            if (logFile.length() > MAX_LOG_FILE_SIZE) {
+                logFile.renameTo(new File(logFile.getPath() + ".1"));
+            }
+            try (FileWriter writer = new FileWriter(logFile, true)) {
+                writer.write(new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US).format(new Date(time)) +
+                        " " + level + " " + message + thrown + "\n");
+            } catch (IOException ignored) {
+            }
+        });
+    }
 
     public static boolean isNetworkConnected(Context context) {
         ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -172,37 +207,49 @@ public class Utils {
 
     public static void debug(String message) {
         if (BuildConfig.DEBUG) {
-            Log.d(LOG_TAG, logPrefix() + message);
+            String line = logPrefix() + message;
+            Log.d(LOG_TAG, line);
+            logToFile("D", line, null);
         }
     }
 
     public static void info(String message) {
         if (BuildConfig.DEBUG) {
-            Log.i(LOG_TAG, logPrefix() + message);
+            String line = logPrefix() + message;
+            Log.i(LOG_TAG, line);
+            logToFile("I", line, null);
         }
     }
 
     public static void warn(String message) {
         if (BuildConfig.DEBUG) {
-            Log.w(LOG_TAG, logPrefix() + message);
+            String line = logPrefix() + message;
+            Log.w(LOG_TAG, line);
+            logToFile("W", line, null);
         }
     }
 
     public static void warn(String message, Throwable t) {
         if (BuildConfig.DEBUG) {
-            Log.w(LOG_TAG, logPrefix() + message, t);
+            String line = logPrefix() + message;
+            Log.w(LOG_TAG, line, t);
+            logToFile("W", line, t);
         }
     }
 
     public static void error(String message) {
         if (BuildConfig.DEBUG) {
-            Log.e(LOG_TAG, logPrefix() + message);
+            String line = logPrefix() + message;
+            Log.e(LOG_TAG, line);
+            logToFile("E", line, null);
         }
     }
 
     public static void error(String message, Throwable t) {
         if (BuildConfig.DEBUG) {
-            Log.e(LOG_TAG, logPrefix() + message, t);
+            String line = logPrefix() + message;
+            Log.e(LOG_TAG, line, t);
+            logToFile("E", line, t);
         }
     }
 

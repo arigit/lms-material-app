@@ -858,6 +858,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     @Override
     public void onCreate() {
         super.onCreate();
+        Utils.startFileLog(this);
         Utils.debug("");
         cometClient = new CometClient(this);
         mediaSession = new MediaSessionCompat(getApplicationContext(), "Lyrion");
