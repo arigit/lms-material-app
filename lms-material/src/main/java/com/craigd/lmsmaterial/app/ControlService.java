@@ -98,6 +98,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final String ACTION_RATE = "rate";
     private static final int RATING_REFRESH_MS = 1000;
     private static final int COMMAND_STATUS_REFRESH_MS = 500;
+    private static final int PLAY_STATUS_REFRESH_MS = 2000;
     private static final int RESUME_TOLERANCE_MS = 3000;
     private static final int MSG_ID = 1;
     private static final int COVER_TIMEOUT_MS = 10000;
@@ -375,7 +376,12 @@ public class ControlService extends MediaBrowserServiceCompat {
                 @Override
                 public void onPlay() {
                     Utils.debug("");
-                    playOnPlayer(() -> sendCommand(PLAY_COMMAND));
+                    playOnPlayer(() -> {
+                        sendCommand(PLAY_COMMAND);
+                        // Resuming, LMS's first status can still have the old time (seen: the track's end), and
+                        // nothing is pushed while a track plays on.
+                        handler.postDelayed(commandStatusRefresh, PLAY_STATUS_REFRESH_MS);
+                    });
                 }
 
                 @Override
@@ -420,7 +426,7 @@ public class ControlService extends MediaBrowserServiceCompat {
                     }
                     getBrowseExecutor().execute(() -> switchOnForPlay(() -> {
                         if (getBrowseHelper().playMediaId(mediaId)) {
-                            handler.post(ControlService.this::setBuffering);
+                            handler.post(ControlService.this::playbackRequested);
                         }
                     }));
                 }
@@ -435,7 +441,7 @@ public class ControlService extends MediaBrowserServiceCompat {
                     getBrowseExecutor().execute(() -> switchOnForPlay(() -> {
                         for (MediaBrowserCompat.MediaItem item : getBrowseHelper().search(query)) {
                             if (item.isPlayable() && getBrowseHelper().playMediaId(item.getMediaId())) {
-                                handler.post(ControlService.this::setBuffering);
+                                handler.post(ControlService.this::playbackRequested);
                                 return;
                             }
                         }
@@ -462,6 +468,19 @@ public class ControlService extends MediaBrowserServiceCompat {
             };
         }
         return mediaSessionCallback;
+    }
+
+    // Playback was started from the browse tree or search, not via sendCommand(): also re-read the status
+    // rather than relying on the CometD push, which can go silent and leave Now Playing on the old track.
+    // LMS may still be loading the tracks after the first read, so read again a bit later.
+    private void playbackRequested() {
+        setBuffering();
+        if (null!=cometClient && !cometClient.isConnected() && Utils.isNetworkConnected(this)) {
+            cometClient.connect();
+        }
+        handler.removeCallbacks(commandStatusRefresh);
+        handler.postDelayed(commandStatusRefresh, COMMAND_STATUS_REFRESH_MS);
+        handler.postDelayed(commandStatusRefresh, PLAY_STATUS_REFRESH_MS);
     }
 
     private void setBuffering() {
