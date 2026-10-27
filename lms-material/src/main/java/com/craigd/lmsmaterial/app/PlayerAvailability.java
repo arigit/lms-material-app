@@ -113,6 +113,18 @@ final class PlayerAvailability {
         return null;
     }
 
+    // Whether a player (null if LMS doesn't list it) runs on this device: by its IP, or, if a player app is set, if
+    // it is the default player. Away from home LMS can see the phone at another address (e.g. a VPN gateway's), so
+    // the IP alone doesn't tell.
+    static boolean isLocalPlayer(Player player, String playerId, String playerName, Set<String> localAddresses,
+                                 String defaultPlayer, boolean hasPlayerApp) {
+        if (player != null && localAddresses != null && localAddresses.contains(player.ip)) {
+            return true;
+        }
+        return hasPlayerApp && defaultPlayer != null && !defaultPlayer.trim().isEmpty() &&
+                isAllowed(defaultPlayer.trim(), playerId, player != null ? player.name : playerName);
+    }
+
     // A connected player running on this device, e.g. the Squeezelite app.
     static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses) {
         if (players == null || localAddresses == null) {

@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -66,6 +67,33 @@ public class PlayerAvailabilityTest {
         assertEquals("00:11:22:33:44:55",
                 PlayerAvailability.findConnectedLocalPlayer(players, Collections.singleton("192.168.1.30")).id);
         assertNull(PlayerAvailability.findConnectedLocalPlayer(players, Collections.singleton("10.0.0.5")));
+    }
+
+    @Test
+    public void defaultPlayerIsLocalWhenLmsSeesItAtAnotherAddress() {
+        // Away from home, through a VPN: LMS lists the phone's stopped player at the gateway's address.
+        PlayerAvailability.Player phone = new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", false, "192.168.1.8", false);
+        Set<String> local = Collections.singleton("10.20.30.40");
+
+        assertTrue(PlayerAvailability.isLocalPlayer(phone, phone.id, "Phone", local, "Phone", true));
+        assertTrue(PlayerAvailability.isLocalPlayer(phone, phone.id, "Phone", local, phone.id, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, "Phone", local, "Phone", false));
+        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, "Phone", local, "Kitchen", true));
+        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, "Phone", local, null, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, "Phone", local, " ", true));
+    }
+
+    @Test
+    public void localPlayerIsMatchedByIpOrAsUnlistedDefault() {
+        PlayerAvailability.Player kitchen = new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", true, "192.168.1.20");
+
+        assertTrue(PlayerAvailability.isLocalPlayer(kitchen, kitchen.id, "Kitchen",
+                Collections.singleton("192.168.1.20"), null, false));
+        assertFalse(PlayerAvailability.isLocalPlayer(kitchen, kitchen.id, "Kitchen",
+                Collections.singleton("192.168.1.30"), "Phone", true));
+        // Not listed by LMS (e.g. forgotten): the default player, by the name last seen.
+        assertTrue(PlayerAvailability.isLocalPlayer(null, "00:11:22:33:44:55", "Phone",
+                Collections.singleton("192.168.1.30"), "Phone", true));
     }
 
     @Test

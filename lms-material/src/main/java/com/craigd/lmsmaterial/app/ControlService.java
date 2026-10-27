@@ -1290,14 +1290,13 @@ public class ControlService extends MediaBrowserServiceCompat {
         return true;
     }
 
-    // Whether the player runs on this phone: by its IP, or, if LMS doesn't list it, if it is the default player.
+    // Whether the player runs on this phone: by its IP, or if it is the default player and a player app is set.
     private boolean isLocalPlayer(List<PlayerAvailability.Player> players, String playerId) {
-        PlayerAvailability.Player player = PlayerAvailability.findPlayer(players, playerId);
-        if (null!=player) {
-            return MainActivity.getLocalIpAddresses().contains(player.ip);
-        }
-        String defaultPlayer = prefs.getString(SettingsActivity.DEFAULT_PLAYER_PREF_KEY, null);
-        return null!=defaultPlayer && PlayerAvailability.isAllowed(defaultPlayer.trim(), playerId, MainActivity.activePlayerName);
+        String playerApp = prefs.getString(SettingsActivity.PLAYER_APP_PREF_KEY, null);
+        return PlayerAvailability.isLocalPlayer(PlayerAvailability.findPlayer(players, playerId), playerId,
+                MainActivity.activePlayerName, MainActivity.getLocalIpAddresses(),
+                prefs.getString(SettingsActivity.DEFAULT_PLAYER_PREF_KEY, null),
+                !Utils.isEmpty(playerApp) && !LocalPlayer.NO_PLAYER.equals(playerApp));
     }
 
     private void playOnPlayer(Runnable play) {
