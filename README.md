@@ -3,7 +3,11 @@ This application *requires* that you run LMS and have the Material-Skin plugin
 installed. However, it is not required for Material to be set as the default
 skin.
 
-This app is based upon https://github.com/andreasbehnke/lms-material-app
+This repository is [arigit/lms-material-app](https://github.com/arigit/lms-material-app), a fork with Android Auto support (see below). Its upstream sources:
+
+- [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app): the LMS Material app, by Craig Drummond, itself based upon [andreasbehnke/lms-material-app](https://github.com/andreasbehnke/lms-material-app).
+- [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto): Android Auto support, added to CDrummond's app by chrober.
+- The phone player used with it: [arigit/squeezelite](https://github.com/arigit/squeezelite), forked from [chrober/squeezelite](https://github.com/chrober/squeezelite/tree/build/android-auto-apk) and [CDrummond/squeezelite](https://github.com/CDrummond/squeezelite), the Android port of [ralph-irving/squeezelite](https://github.com/ralph-irving/squeezelite).
 
 # lms-material-app (ar): Android Auto fork
 
@@ -16,7 +20,7 @@ This fork is optimized for **in-car playback of a remote music collection**: you
 
 It is a separate app (`com.craigd.lmsmaterial.app.ar`, shown on the phone and in Android Auto as "Lyrion (ar)"), so it installs alongside the original.
 
-It builds on the upstream sources: [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app), the original LMS Material app, and [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto), which added Android Auto support. Once this fork's code has proven fully stable, the plan is to propose merging it upstream.
+Once this fork's code has proven fully stable, the plan is to propose merging it upstream (see the upstream sources above).
 
 <img src="docs/screenshots/now-playing.png" alt="Now Playing in Android Auto, with Queue, rating and Power buttons" width="49%"> <img src="docs/screenshots/albums.png" alt="The Albums tab in Android Auto: New Music, Random Albums, Recently Played Albums" width="49%">
 
