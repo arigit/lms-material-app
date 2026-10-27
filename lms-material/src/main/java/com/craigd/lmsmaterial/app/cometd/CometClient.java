@@ -53,6 +53,9 @@ public class CometClient {
     private SlimClient bayeuxClient;
     private String currentPlayer = null;
     private String subscribedPlayer = null;
+    // A single listener: onConnected() runs again after every rehandshake, and subscribing a new one each time
+    // made every status message be handled once per earlier rehandshake.
+    private final ClientSessionChannel.MessageListener playerStatusListener = this::handlePlayerStatus;
     // Keep server details so that we can detect if changed
     private String serverAddress = "";
     private int serverPort = 9000;
@@ -321,7 +324,10 @@ public class CometClient {
         Utils.debug("currentPlayer:"+currentPlayer);
         subscribedPlayer = null;
         connectionState.setConnectionState(ConnectionState.State.CONNECTION_COMPLETED);
-        bayeuxClient.getChannel("/"+bayeuxClient.getId() + "/slim/playerstatus/*").subscribe(this::handlePlayerStatus);
+        ClientSessionChannel statusChannel = bayeuxClient.getChannel("/"+bayeuxClient.getId() + "/slim/playerstatus/*");
+        if (!statusChannel.getSubscribers().contains(playerStatusListener)) {
+            statusChannel.subscribe(playerStatusListener);
+        }
         subscribeToPlayer(currentPlayer);
         backgroundHandler.removeMessages(MSG_HANDSHAKE_TIMEOUT);
     }
