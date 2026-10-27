@@ -370,12 +370,26 @@ public class ControlService extends MediaBrowserServiceCompat {
         ratingsSupported = null;
     }
 
+    // The app that sent the current media session command, e.g. Android Auto or Bluetooth (a car's play button).
+    private String controllerName() {
+        MediaSessionCompat session = mediaSession;
+        if (null==session) {
+            return "?";
+        }
+        try {
+            androidx.media.MediaSessionManager.RemoteUserInfo info = session.getCurrentControllerInfo();
+            return info.getPackageName() + " (uid " + info.getUid() + ")";
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
     private synchronized MediaSessionCompat.Callback getMediaSessionCallback() {
         if (null==mediaSessionCallback) {
             mediaSessionCallback = new MediaSessionCompat.Callback() {
                 @Override
                 public void onPlay() {
-                    Utils.debug("");
+                    Utils.debug("from " + controllerName());
                     playOnPlayer(() -> {
                         sendCommand(PLAY_COMMAND);
                         // Resuming, LMS's first status can still have the old time (seen: the track's end), and
@@ -386,7 +400,7 @@ public class ControlService extends MediaBrowserServiceCompat {
 
                 @Override
                 public void onPause() {
-                    Utils.debug("");
+                    Utils.debug("from " + controllerName());
                     sendCommand(PAUSE_COMMAND);
                 }
 
