@@ -27,6 +27,7 @@ import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.Point;
 import android.net.ConnectivityManager;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -103,8 +104,9 @@ public class MainActivity extends AppCompatActivity {
     private static final int PAGE_TIMEOUT = 5000; // ms
     private static final int DISCONNECT_TIMEOUT = 6; // seconds
     private static final int DISCONNECT_TIMEOUT_WITHOUT_NETWORK = 10; // seconds
-    // After this long in the background the page is reloaded: the web UI can keep showing a stale player, e.g. its
-    // progress clock still running hours after the player was forgotten by LMS.
+    // After this long in the background, or after the network changed meanwhile, the page is reloaded: the web UI
+    // can keep showing a stale player, e.g. its progress clock still running hours after the player was forgotten
+    // by LMS, or an empty queue after moving from Wi-Fi to mobile data.
     private static final long RELOAD_AFTER_BACKGROUND_MS = 30 * 60 * 1000;
 
     private SharedPreferences sharedPreferences;
@@ -125,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean pageLoaded = false;
     private long recreateTime = 0;
     private long pauseTime = 0;
+    private Network pauseNetwork = null;
     private LocalPlayer localPlayer;
     private boolean interceptVolume = true;
 
@@ -988,6 +991,7 @@ public class MainActivity extends AppCompatActivity {
         webView.onPause();
         webView.pauseTimers();
         pauseTime = SystemClock.elapsedRealtime();
+        pauseNetwork = activeNetwork();
         super.onPause();
         isCurrentActivity = false;
     }
@@ -1042,8 +1046,11 @@ public class MainActivity extends AppCompatActivity {
         if (!settingsShown) {
             if (pageLoaded) {
                 localPlayer.autoStart(true);
-                if (pauseTime>0 && SystemClock.elapsedRealtime()-pauseTime>RELOAD_AFTER_BACKGROUND_MS) {
-                    Utils.info("Reload URL after " + ((SystemClock.elapsedRealtime()-pauseTime)/60000) + " minutes in the background");
+                Network network = activeNetwork();
+                boolean networkChanged = null!=pauseNetwork && null!=network && !pauseNetwork.equals(network);
+                if (pauseTime>0 && (networkChanged || SystemClock.elapsedRealtime()-pauseTime>RELOAD_AFTER_BACKGROUND_MS)) {
+                    Utils.info("Reload URL after " + ((SystemClock.elapsedRealtime()-pauseTime)/60000) + " minutes in the background" +
+                               (networkChanged ? ", network changed" : ""));
                     pageError = false;
                     webView.reload();
                 }
@@ -1110,6 +1117,11 @@ public class MainActivity extends AppCompatActivity {
         notifications = notificationsNow;
         manageShowOverLockscreen();
         reloadUrlAfterSettings=false;
+    }
+
+    private Network activeNetwork() {
+        ConnectivityManager connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        return null==connectivityManager ? null : connectivityManager.getActiveNetwork();
     }
 
     @Override

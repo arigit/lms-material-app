@@ -174,6 +174,9 @@ public class CometClient {
         Utils.debug("");
         connectionState.setConnectionState(ConnectionState.State.CONNECTION_STARTED);
         backgroundHandler.post(() -> {
+            // A connect while connected (e.g. two network changes in a row) would otherwise leave the old client
+            // running alongside the new one, each rehandshaking and receiving player status.
+            disconnectFromServer();
             ServerDiscovery.Server server = new ServerDiscovery.Server(prefs.getString(SettingsActivity.SERVER_PREF_KEY, null));
             if (null == server.ip) {
                 connectionState.setConnectionError(ConnectionState.Error.INVALID_URL);
