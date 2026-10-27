@@ -103,6 +103,9 @@ public class MainActivity extends AppCompatActivity {
     private static final int PAGE_TIMEOUT = 5000; // ms
     private static final int DISCONNECT_TIMEOUT = 6; // seconds
     private static final int DISCONNECT_TIMEOUT_WITHOUT_NETWORK = 10; // seconds
+    // After this long in the background the page is reloaded: the web UI can keep showing a stale player, e.g. its
+    // progress clock still running hours after the player was forgotten by LMS.
+    private static final long RELOAD_AFTER_BACKGROUND_MS = 30 * 60 * 1000;
 
     private SharedPreferences sharedPreferences;
     private WebView webView;
@@ -121,6 +124,7 @@ public class MainActivity extends AppCompatActivity {
     public static boolean isDark = true;
     private boolean pageLoaded = false;
     private long recreateTime = 0;
+    private long pauseTime = 0;
     private LocalPlayer localPlayer;
     private boolean interceptVolume = true;
 
@@ -983,6 +987,7 @@ public class MainActivity extends AppCompatActivity {
         Utils.info("");
         webView.onPause();
         webView.pauseTimers();
+        pauseTime = SystemClock.elapsedRealtime();
         super.onPause();
         isCurrentActivity = false;
     }
@@ -1037,6 +1042,11 @@ public class MainActivity extends AppCompatActivity {
         if (!settingsShown) {
             if (pageLoaded) {
                 localPlayer.autoStart(true);
+                if (pauseTime>0 && SystemClock.elapsedRealtime()-pauseTime>RELOAD_AFTER_BACKGROUND_MS) {
+                    Utils.info("Reload URL after " + ((SystemClock.elapsedRealtime()-pauseTime)/60000) + " minutes in the background");
+                    pageError = false;
+                    webView.reload();
+                }
             }
             if (!ControlService.NO_NOTIFICATION.equals(sharedPreferences.getString(SettingsActivity.NOTIFCATIONS_PREF_KEY, ControlService.NO_NOTIFICATION)) && Utils.notificationAllowed(this, ControlService.NOTIFICATION_CHANNEL_ID)) {
                 if (!ControlService.isActive()) {
