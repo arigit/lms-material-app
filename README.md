@@ -5,9 +5,21 @@ skin.
 
 This app is based upon https://github.com/andreasbehnke/lms-material-app
 
-# Experimental Android Auto support
+# Lyrion (ar): Android Auto fork
 
-The `arigit` fork's `build/android-auto-apk` branch contains experimental Android Auto support and a fork-only APK workflow. The shared setup, local development, and APK-testing guide is maintained in the [Squeezelite fork](https://github.com/arigit/squeezelite/blob/build/android-auto-apk/docs/android-auto.md). It is not part of the upstream project or its pull requests.
+This fork adds Android Auto to the app: browse your library (albums, artists, playlists, favourites, recently played, A-Z with letter jumps), see and pick from the play queue, rate tracks (Ratings Light), switch players and libraries, and power the phone's player on and off from the car. It is designed to work with the phone itself as the player, through [Squeezelite (ar)](https://github.com/arigit/squeezelite), which it starts when the car connects. It is a separate app ("Lyrion (ar)", `com.craigd.lmsmaterial.app.ar`), so it installs alongside the original.
+
+## Install
+
+1. Download the latest `Lyrion-ar-*.apk` from [Releases](https://github.com/arigit/lms-material-app/releases) and `Squeezelite-ar-*.apk` from [Squeezelite (ar) releases](https://github.com/arigit/squeezelite/releases), and install both (allow installing from your browser or file manager when Android asks).
+2. Open **Squeezelite (ar)**, set the LMS server, and start the player once.
+3. Open **Lyrion (ar)**, connect to the same LMS server, and in **Settings** set **Player app** to **Squeezelite (ar)**. For the car, also turn on **Auto-start player**, and set the phone's player as the **Default player** (with **Only control default** if only the phone should be controlled).
+4. Android Auto only lists apps that aren't from the Play Store once you allow it: open Android Auto's settings on the phone, tap **Version** repeatedly until developer mode is enabled, then in the ⋮ menu → **Developer settings** turn on **Unknown sources**.
+5. Connect to the car and pick **Lyrion (ar)** from the Android Auto launcher. Android Auto remembers it as your media app from then on.
+
+Updates are installed the same way, over the existing app (settings are kept). The release APKs are signed with the fork's own key, so they can't replace an app installed from F-Droid or another build.
+
+More details on testing, including with the Desktop Head Unit: [Squeezelite (ar) docs/android-auto.md](https://github.com/arigit/squeezelite/blob/master/docs/android-auto.md).
  
  [<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
      alt="Get it on F-Droid"
