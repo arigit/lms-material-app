@@ -72,5 +72,8 @@ jobs:
           fi
           apk="Lyrion-ar-$version.apk"
           cp lms-material/build/outputs/apk/release/*.apk "$apk"
-          gh release create "$TAG" "$apk" --title "lms-material-app (ar) $version" \
-            --notes "lms-material-app (ar) $version. Install it together with Squeezelite (ar) from https://github.com/arigit/squeezelite/releases - see the README for setup."
+          # Its player too, so that both APKs are in one place
+          gh release download -R arigit/squeezelite --pattern 'Squeezelite-ar-*.apk'
+          player=$(ls Squeezelite-ar-*.apk)
+          gh release create "$TAG" "$apk" "$player" --title "lms-material-app (ar) $version" \
+            --notes "lms-material-app (ar) $version (shown on the phone as Lyrion (ar)). Install both APKs: $apk and its player $player (the latest Squeezelite (ar) release, from https://github.com/arigit/squeezelite/releases) - see the README for setup."

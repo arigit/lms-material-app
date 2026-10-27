@@ -26,7 +26,7 @@ Once this fork's code has proven fully stable, the plan is to propose merging it
 
 ## Install
 
-1. Download the latest `Lyrion-ar-*.apk` from [Releases](https://github.com/arigit/lms-material-app/releases) and `Squeezelite-ar-*.apk` from [Squeezelite (ar) releases](https://github.com/arigit/squeezelite/releases), and install both (allow installing from your browser or file manager when Android asks).
+1. From the latest [release](https://github.com/arigit/lms-material-app/releases/latest), download both `Lyrion-ar-*.apk` and its player `Squeezelite-ar-*.apk` (also published on its own in [Squeezelite (ar) releases](https://github.com/arigit/squeezelite/releases)), and install both (allow installing from your browser or file manager when Android asks).
 2. Open **Squeezelite (ar)**, set the LMS server, and start the player once.
 3. Open **Lyrion (ar)**, connect to the same LMS server, and in **Settings** set **Player app** to **Squeezelite (ar)**. For the car, also turn on **Auto-start player**, and set the phone's player as the **Default player** (with **Only control default** if only the phone should be controlled).
 4. Android Auto only lists apps that aren't from the Play Store once you allow it: open Android Auto's settings on the phone, tap **Version** repeatedly until developer mode is enabled, then in the ⋮ menu → **Developer settings** turn on **Unknown sources**.
