@@ -5,7 +5,7 @@ skin.
 
 This app is based upon https://github.com/andreasbehnke/lms-material-app
 
-# Lyrion (ar): Android Auto fork
+# lms-material-app (ar): Android Auto fork
 
 This fork is optimized for **in-car playback of a remote music collection**: your music stays on your Lyrion Music Server at home, and the phone streams it to the car through Android Auto, with [Squeezelite (ar)](https://github.com/arigit/squeezelite) as the player on the phone.
 
@@ -14,7 +14,9 @@ This fork is optimized for **in-car playback of a remote music collection**: you
 - See and pick from the play queue, and rate tracks (Ratings Light).
 - Pauses for another media app (e.g. a podcast) started in the car.
 
-It is a separate app ("Lyrion (ar)", `com.craigd.lmsmaterial.app.ar`), so it installs alongside the original.
+It is a separate app (`com.craigd.lmsmaterial.app.ar`, shown on the phone and in Android Auto as "Lyrion (ar)"), so it installs alongside the original.
+
+It builds on the upstream sources: [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app), the original LMS Material app, and [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto), which added Android Auto support. Once this fork's code has proven fully stable, the plan is to propose merging it upstream.
 
 <img src="docs/screenshots/now-playing.png" alt="Now Playing in Android Auto, with Queue, rating and Power buttons" width="49%"> <img src="docs/screenshots/albums.png" alt="The Albums tab in Android Auto: New Music, Random Albums, Recently Played Albums" width="49%">
 

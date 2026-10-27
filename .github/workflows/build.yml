@@ -72,5 +72,5 @@ jobs:
           fi
           apk="Lyrion-ar-$version.apk"
           cp lms-material/build/outputs/apk/release/*.apk "$apk"
-          gh release create "$TAG" "$apk" --title "Lyrion (ar) $version" \
-            --notes "Lyrion (ar) $version. Install it together with Squeezelite (ar) from https://github.com/arigit/squeezelite/releases - see the README for setup."
+          gh release create "$TAG" "$apk" --title "lms-material-app (ar) $version" \
+            --notes "lms-material-app (ar) $version. Install it together with Squeezelite (ar) from https://github.com/arigit/squeezelite/releases - see the README for setup."
