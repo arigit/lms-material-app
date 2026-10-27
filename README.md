@@ -20,6 +20,8 @@ This fork is optimized for **in-car playback of a remote music collection**: you
 
 It is a separate app (`com.craigd.lmsmaterial.app.ar`, shown on the phone and in Android Auto as "Lyrion (ar)"), so it installs alongside the original.
 
+This fork was developed with heavy use of AI (Claude Code): the changes were designed, written and tested with an AI assistant, and checked in the car and with Android Auto's Desktop Head Unit.
+
 Once this fork's code has proven fully stable, the plan is to propose merging it upstream (see the upstream sources above).
 
 <img src="docs/screenshots/now-playing.png" alt="Now Playing in Android Auto, with Queue, rating and Power buttons" width="49%"> <img src="docs/screenshots/albums.png" alt="The Albums tab in Android Auto: New Music, Random Albums, Recently Played Albums" width="49%">
