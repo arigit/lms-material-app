@@ -125,6 +125,21 @@ final class PlayerAvailability {
                 isAllowed(defaultPlayer.trim(), playerId, player != null ? player.name : playerName);
     }
 
+    // A connected player running on this device: by IP, else (see isLocalPlayer) the default player.
+    static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses, String defaultPlayer,
+                                           boolean hasPlayerApp) {
+        Player player = findConnectedLocalPlayer(players, localAddresses);
+        if (player != null || players == null) {
+            return player;
+        }
+        for (Player p : players) {
+            if (p.connected && isLocalPlayer(p, p.id, p.name, localAddresses, defaultPlayer, hasPlayerApp)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
     // A connected player running on this device, e.g. the Squeezelite app.
     static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses) {
         if (players == null || localAddresses == null) {

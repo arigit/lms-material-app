@@ -1306,11 +1306,14 @@ public class ControlService extends MediaBrowserServiceCompat {
 
     // Whether the player runs on this phone: by its IP, or if it is the default player and a player app is set.
     private boolean isLocalPlayer(List<PlayerAvailability.Player> players, String playerId) {
-        String playerApp = prefs.getString(SettingsActivity.PLAYER_APP_PREF_KEY, null);
         return PlayerAvailability.isLocalPlayer(PlayerAvailability.findPlayer(players, playerId), playerId,
                 MainActivity.activePlayerName, MainActivity.getLocalIpAddresses(),
-                prefs.getString(SettingsActivity.DEFAULT_PLAYER_PREF_KEY, null),
-                !Utils.isEmpty(playerApp) && !LocalPlayer.NO_PLAYER.equals(playerApp));
+                prefs.getString(SettingsActivity.DEFAULT_PLAYER_PREF_KEY, null), hasPlayerApp());
+    }
+
+    private boolean hasPlayerApp() {
+        String playerApp = prefs.getString(SettingsActivity.PLAYER_APP_PREF_KEY, null);
+        return !Utils.isEmpty(playerApp) && !LocalPlayer.NO_PLAYER.equals(playerApp);
     }
 
     private void playOnPlayer(Runnable play) {
@@ -1477,7 +1480,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         defaultPlayer = null==defaultPlayer || defaultPlayer.trim().isEmpty() ? null : defaultPlayer.trim();
         PlayerAvailability.Player active = PlayerAvailability.findConnectedPlayer(players, MainActivity.activePlayer);
         PlayerAvailability.Player local = autoPlayerStarted
-                ? PlayerAvailability.findConnectedLocalPlayer(players, MainActivity.getLocalIpAddresses())
+                ? PlayerAvailability.findConnectedLocalPlayer(players, MainActivity.getLocalIpAddresses(), defaultPlayer, hasPlayerApp())
                 : null;
         boolean activeIsDefault = null!=active && null!=defaultPlayer && PlayerAvailability.isAllowed(defaultPlayer, active.id, active.name);
 

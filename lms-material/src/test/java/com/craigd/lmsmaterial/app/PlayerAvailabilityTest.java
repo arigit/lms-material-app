@@ -97,6 +97,25 @@ public class PlayerAvailabilityTest {
     }
 
     @Test
+    public void connectedLocalPlayerFallsBackToTheDefaultPlayer() {
+        // Away from home, through a VPN: LMS sees the phone at the gateway's address.
+        List<PlayerAvailability.Player> players = new ArrayList<>(Arrays.asList(
+                new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", true, "192.168.1.20"),
+                new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", true, "192.168.1.8")));
+        Set<String> local = Collections.singleton("10.20.30.40");
+
+        assertEquals("00:11:22:33:44:55", PlayerAvailability.findConnectedLocalPlayer(players, local, "Phone", true).id);
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local, "Phone", false));
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local, null, true));
+        // A match by IP wins over the default player.
+        assertEquals("aa:bb:cc:dd:ee:ff", PlayerAvailability.findConnectedLocalPlayer(players,
+                Collections.singleton("192.168.1.20"), "Phone", true).id);
+        // Not while it isn't connected.
+        players.set(1, new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", false, "192.168.1.8"));
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local, "Phone", true));
+    }
+
+    @Test
     public void findsAPlayerWhetherOrNotItIsConnected() {
         List<PlayerAvailability.Player> players = Arrays.asList(
                 new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", true),
