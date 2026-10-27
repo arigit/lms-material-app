@@ -19,12 +19,12 @@ public class LocalPlayer {
     public static final String SB_PLAYER = "sbplayer";
     public static final String SQUEEZE_PLAYER = "squeezeplayer";
     public static final String SQUEEZELITE = "squeezelite";
-    public static final String SQUEEZELITE_CHROBER = "squeezelite_chrober";
+    public static final String SQUEEZELITE_AR = "squeezelite_ar";
 
     public static final String SB_PLAYER_PKG = "com.angrygoat.android.sbplayer";
     public static final String SQUEEZE_PLAYER_PKG = "de.bluegaspode.squeezeplayer";
     public static final String SQUEEZELITE_PKG = "org.lyrion.squeezelite";
-    public static final String SQUEEZELITE_CHROBER_PKG = "org.lyrion.squeezelite.chrober";
+    public static final String SQUEEZELITE_AR_PKG = "org.lyrion.squeezelite.ar";
     private static final String SQUEEZELITE_SERVICE_CLASS = "org.lyrion.squeezelite.PlayerService";
     private final SharedPreferences sharedPreferences;
     private final Context context;
@@ -77,8 +77,8 @@ public class LocalPlayer {
             if (controlSqueezelite(true, SQUEEZELITE_PKG, "Squeezelite")) {
                 state = State.STARTED;
             }
-        } else if (SQUEEZELITE_CHROBER.equals(playerApp)) {
-            if (controlSqueezelite(true, SQUEEZELITE_CHROBER_PKG, "Squeezelite (chrober)")) {
+        } else if (SQUEEZELITE_AR.equals(playerApp)) {
+            if (controlSqueezelite(true, SQUEEZELITE_AR_PKG, "Squeezelite (ar)")) {
                 state = State.STARTED;
             }
         }
@@ -109,8 +109,8 @@ public class LocalPlayer {
             if (controlSqueezelite(false, SQUEEZELITE_PKG, "Squeezelite")) {
                 state = State.STOPPED;
             }
-        } else if (SQUEEZELITE_CHROBER.equals(playerApp)) {
-            if (controlSqueezelite(false, SQUEEZELITE_CHROBER_PKG, "Squeezelite (chrober)")) {
+        } else if (SQUEEZELITE_AR.equals(playerApp)) {
+            if (controlSqueezelite(false, SQUEEZELITE_AR_PKG, "Squeezelite (ar)")) {
                 state = State.STOPPED;
             }
         }

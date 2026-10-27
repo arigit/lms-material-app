@@ -16,7 +16,7 @@
         <package android:name="com.angrygoat.android.sbplayer" />
         <package android:name="de.bluegaspode.squeezeplayer" />
         <package android:name="org.lyrion.squeezelite" />
-        <package android:name="org.lyrion.squeezelite.chrober" />
+        <package android:name="org.lyrion.squeezelite.ar" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="application/pdf" />

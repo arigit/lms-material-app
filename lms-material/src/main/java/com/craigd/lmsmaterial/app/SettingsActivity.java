@@ -380,7 +380,7 @@ public class SettingsActivity extends AppCompatActivity {
                 if ( (LocalPlayer.SB_PLAYER.equals(val) && !Utils.isInstalled(activity, LocalPlayer.SB_PLAYER_PKG, "SB Player")) ||
                      (LocalPlayer.SQUEEZE_PLAYER.equals(val) && !Utils.isInstalled(activity, LocalPlayer.SQUEEZE_PLAYER_PKG, "SqueezePlayer")) ||
                      (LocalPlayer.SQUEEZELITE.equals(val) && !Utils.isInstalled(activity, LocalPlayer.SQUEEZELITE_PKG, "Squeezelite")) ||
-                     (LocalPlayer.SQUEEZELITE_CHROBER.equals(val) && !Utils.isInstalled(activity, LocalPlayer.SQUEEZELITE_CHROBER_PKG, "Squeezelite (chrober)"))) {
+                     (LocalPlayer.SQUEEZELITE_AR.equals(val) && !Utils.isInstalled(activity, LocalPlayer.SQUEEZELITE_AR_PKG, "Squeezelite (ar)"))) {
                     resetLocalPlayer();
                 } else {
                     updateListSummary(key);
