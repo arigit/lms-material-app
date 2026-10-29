@@ -50,6 +50,9 @@ public class LmsBrowseHelper {
     public static final String ALBUM_CLICK_PREF_KEY = "auto_album_click";
     public static final String ALBUM_CLICK_TRACKS = "tracks";
     public static final String ALBUM_CLICK_PLAY = "play";
+    // "Add to queue" row in an album's or playlist's track list (+ "album/<id>" or "playlist/<id>"). A row rather
+    // than a custom browse action: Android Auto (17.9) gives the app none.
+    private static final String QUEUE_ADD_PREFIX = "queueadd/";
     private static final String ALBUM_TRACK_PREFIX = "albumtrack/";
     private static final String LETTERS_PREFIX = "letters/"; // + A-Z list ID: pick a letter of that list
     private static final String ALL_LIBRARIES_ID = "-1"; // LMS: no library restriction
@@ -819,6 +822,10 @@ public class LmsBrowseHelper {
             // Tapping a track queues the whole album (exactly the tracks listed, in this order) and
             // starts playback at that track - so remember the list for playMediaId().
             List<String> trackIds = new ArrayList<>();
+            if (loop.length() > 0) {
+                items.add(buildPlayableItem(ALBUM_TRACK_PREFIX + albumId + "/0", context.getString(R.string.play_album), null, drawableUri(R.drawable.ic_play)));
+                items.add(buildQueueAddItem("album/" + albumId));
+            }
             for (int i = 0; i < loop.length(); i++) {
                 JSONObject track = loop.getJSONObject(i);
                 trackIds.add(track.optString("id", ""));
@@ -984,6 +991,7 @@ public class LmsBrowseHelper {
             if (null==loop) return items;
 
             items.add(buildPlayableItem("playlist/" + playlistId, "\u25B6 Play All", null, null));
+            items.add(buildQueueAddItem("playlist/" + playlistId));
             for (int i = 0; i < loop.length(); i++) {
                 JSONObject track = loop.getJSONObject(i);
                 String id = track.optString("id", "");
@@ -1240,6 +1248,48 @@ public class LmsBrowseHelper {
         return false;
     }
 
+    public static boolean isQueueAdd(String mediaId) {
+        return mediaId.startsWith(QUEUE_ADD_PREFIX);
+    }
+
+    /**
+     * Run a tapped "Add to queue" row: add the album or playlist to the end of the active player's queue. If the
+     * queue was empty, playback is started: returns true then. Called on the browse executor.
+     */
+    public boolean addToQueue(String action) {
+        String mediaId = action.substring(QUEUE_ADD_PREFIX.length());
+        String playerId = MainActivity.activePlayer;
+        String item = null;
+        if (mediaId.startsWith("album/")) {
+            String albumId = mediaId.substring(6);
+            AlbumTracks tracks = lastAlbumTracks;
+            // Same tracks, in the same order, as the track list shows.
+            item = null!=tracks && tracks.albumId.equals(albumId) ? "track_id:" + String.join(",", tracks.trackIds) : "album_id:" + albumId;
+        } else if (mediaId.startsWith("playlist/")) {
+            item = "playlist_id:" + mediaId.substring(9);
+        }
+        if (Utils.isEmpty(playerId) || null==item) {
+            return false;
+        }
+        try {
+            JSONObject resp = rpc.sendMessageSync(playerId, new String[]{"status", "-", "1", "tags:"}, TIMEOUT_MS);
+            JSONObject result = null==resp ? null : resp.optJSONObject("result");
+            if (null==result) return false;
+            boolean wasEmpty = 0==result.optInt("playlist_tracks", 0);
+            String lib = getLibraryId();
+            rpc.sendMessageSync(playerId, new String[]{"playlistcontrol", "cmd:add", item,
+                    "library_id:" + (null!=lib ? lib : ALL_LIBRARIES_ID)}, TIMEOUT_MS);
+            Utils.debug("Added " + mediaId + " to the " + (wasEmpty ? "empty " : "") + "queue");
+            if (wasEmpty) {
+                rpc.sendMessageSync(playerId, new String[]{"playlist", "index", "0"}, TIMEOUT_MS);
+                return true;
+            }
+        } catch (Exception e) {
+            Utils.error("Failed to add " + mediaId + " to the queue", e);
+        }
+        return false;
+    }
+
     /**
      * Replace the queue with the given items. Always passes an explicit library: without one, LMS filters
      * the tracks by the *player's* library view (or the server default), which can differ from the list
@@ -1490,6 +1540,10 @@ public class LmsBrowseHelper {
         return albumOpensTrackList()
                 ? buildBrowsableItemWithGroup("album/" + albumId, title, subtitle, iconUri, groupTitle)
                 : buildPlayableItemWithGroup("album/" + albumId, title, subtitle, iconUri, groupTitle);
+    }
+
+    private MediaBrowserCompat.MediaItem buildQueueAddItem(String mediaId) {
+        return buildPlayableItem(QUEUE_ADD_PREFIX + mediaId, context.getString(R.string.add_to_queue), null, drawableUri(R.drawable.ic_queue_add));
     }
 
     private MediaBrowserCompat.MediaItem buildPlayableItem(String mediaId, String title, String subtitle, Uri iconUri) {

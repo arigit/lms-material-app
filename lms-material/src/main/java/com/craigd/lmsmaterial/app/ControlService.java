@@ -96,6 +96,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final String ACTION_POWER = "power";
     private static final String ACTION_QUIT = "quit";
     private static final String ACTION_RATE = "rate";
+    private static final String ACTION_SHUFFLE = "shuffle";
     private static final int RATING_REFRESH_MS = 1000;
     private static final int COMMAND_STATUS_REFRESH_MS = 500;
     private static final int PLAY_STATUS_REFRESH_MS = 2000;
@@ -462,6 +463,14 @@ public class ControlService extends MediaBrowserServiceCompat {
                         });
                         return;
                     }
+                    if (LmsBrowseHelper.isQueueAdd(mediaId)) {
+                        // Adding counts as playing (with "Only control default" the player is switched on, or
+                        // its app started, first), as adding to an empty queue starts playback.
+                        getBrowseExecutor().execute(() -> switchOnForPlay(() ->
+                                handler.post(getBrowseHelper().addToQueue(mediaId)
+                                        ? ControlService.this::playbackRequested : commandStatusRefresh)));
+                        return;
+                    }
                     getBrowseExecutor().execute(() -> switchOnForPlay(() -> {
                         if (getBrowseHelper().playMediaId(mediaId)) {
                             handler.post(ControlService.this::playbackRequested);
@@ -493,6 +502,11 @@ public class ControlService extends MediaBrowserServiceCompat {
                         quit();
                     } else if (ACTION_POWER.equals(action)) {
                         powerPressed();
+                    } else if (ACTION_SHUFFLE.equals(action)) {
+                        // Toggle LMS's shuffle mode (it then lists the queue in the shuffled order; off restores it).
+                        if (null!=lastStatus) {
+                            sendCommand(new String[]{"playlist", "shuffle", 0==lastStatus.shuffle ? "1" : "0"});
+                        }
                     } else if (ACTION_RATE.equals(action)) {
                         if (canRate()) {
                             long now = SystemClock.elapsedRealtime();
@@ -548,6 +562,10 @@ public class ControlService extends MediaBrowserServiceCompat {
         // Android Auto draws custom action icons in one colour, so the state is shown by the icon's shape.
         boolean powered = null!=lastStatus && lastStatus.powered && null!=lastStatus.id && lastStatus.id.equals(MainActivity.activePlayer);
         builder.addCustomAction(ACTION_POWER, getString(R.string.power), powered ? R.drawable.ic_power_on : R.drawable.ic_power_off);
+        if (null!=lastStatus && lastStatus.playlistIndex >= 0 && null!=lastStatus.id && lastStatus.id.equals(MainActivity.activePlayer)) {
+            builder.addCustomAction(ACTION_SHUFFLE, getString(R.string.shuffle),
+                    0==lastStatus.shuffle ? R.drawable.ic_shuffle_off : R.drawable.ic_shuffle);
+        }
         // In the car Android Auto restarts the app straight away, so Quit would only restart the player app.
         if (!carConnected) {
             builder.addCustomAction(ACTION_QUIT, getString(R.string.quit), R.drawable.ic_action_quit);
