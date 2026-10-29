@@ -108,6 +108,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final String ANDROID_AUTO_PKG = "com.google.android.projection.gearhead";
     // Android Auto may ask for the root several times while starting - only react once (reset on disconnect).
     private static final long AUTO_CONNECT_DEBOUNCE_MS = 30000;
+    // With "Ignore the car's play on connect", a play from Android Auto this soon after the car connects is dropped
+    // (seen 2-13 s after the connect, with Android Auto's "Start music automatically" off).
+    private static final long CONNECT_PLAY_IGNORE_MS = 15000;
     // How long to wait for the local player app to show up in LMS after starting it.
     private static final int AUTO_PLAYER_TIMEOUT_MS = 20000;
     // On car connect, restart the player app if the default player is not connected after this long...
@@ -372,16 +375,33 @@ public class ControlService extends MediaBrowserServiceCompat {
 
     // The app that sent the current media session command, e.g. Android Auto or Bluetooth (a car's play button).
     private String controllerName() {
+        androidx.media.MediaSessionManager.RemoteUserInfo info = controllerInfo();
+        return null==info ? "?" : (info.getPackageName() + " (uid " + info.getUid() + ")");
+    }
+
+    private androidx.media.MediaSessionManager.RemoteUserInfo controllerInfo() {
         MediaSessionCompat session = mediaSession;
         if (null==session) {
-            return "?";
+            return null;
         }
         try {
-            androidx.media.MediaSessionManager.RemoteUserInfo info = session.getCurrentControllerInfo();
-            return info.getPackageName() + " (uid " + info.getUid() + ")";
+            return session.getCurrentControllerInfo();
         } catch (Exception e) {
-            return "?";
+            return null;
         }
+    }
+
+    /**
+     * The car (or Android Auto) sends play a few seconds after connecting, even with Android Auto's "Start music
+     * automatically" off. With the setting on, a play from Android Auto that soon after the connect is ignored.
+     */
+    private boolean isConnectAutoPlay() {
+        if (!prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) || 0==lastAutoConnect ||
+                SystemClock.elapsedRealtime() - lastAutoConnect > CONNECT_PLAY_IGNORE_MS) {
+            return false;
+        }
+        androidx.media.MediaSessionManager.RemoteUserInfo info = controllerInfo();
+        return null!=info && ANDROID_AUTO_PKG.equals(info.getPackageName());
     }
 
     private synchronized MediaSessionCompat.Callback getMediaSessionCallback() {
@@ -390,6 +410,10 @@ public class ControlService extends MediaBrowserServiceCompat {
                 @Override
                 public void onPlay() {
                     Utils.debug("from " + controllerName());
+                    if (isConnectAutoPlay()) {
+                        Utils.debug("Ignoring play on car connect");
+                        return;
+                    }
                     playOnPlayer(() -> {
                         sendCommand(PLAY_COMMAND);
                         // Resuming, LMS's first status can still have the old time (seen: the track's end), and

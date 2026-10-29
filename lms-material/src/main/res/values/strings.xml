@@ -89,4 +89,6 @@
     <string name="rating">Rating</string>
     <string name="queue">Queue</string>
     <string name="auto_album_click">When an album is selected</string>
+    <string name="auto_ignore_connect_play">Ignore the car\'s play on connect</string>
+    <string name="auto_ignore_connect_play_summary">Some cars send play a few seconds after connecting, which starts music even with Android Auto\'s \'Start music automatically\' off. Ignore a play from Android Auto in the first 15 seconds after the car connects.</string>
 </resources>
