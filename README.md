@@ -55,6 +55,20 @@ This fork builds on the work done by upstream adding:
   - Select virtual library
 
 
+## Recommended Settings for Phone-Centric Users
+For users seeking to mainly use lms-material-app + squeezelite in the phone, streaming from their home server, the following initial settings could help get a 'just works' user experience without all the trial and error
+
+### Settings in lms-material-app (Lyrion app in the phone)
+
+
+### Settings in squeezelite-app (Squeezelite app in the phone)
+
+
+### Settings in your Lyrion LMS Server, Player Section
+Select your Phone's player name and set:
+
+- Audio
+
 
 # Donations
 
