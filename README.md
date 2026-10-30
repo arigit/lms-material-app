@@ -2,11 +2,13 @@
   <img center width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/dc00ab9c-2cbb-4f2a-b6f5-37423f64078a" />
 </p>
 
-# Introduction
+# Introduction to this fork
 This is an Android-app that can act as a controller of a Lyrion Music Server (LMS), allowing you to play audio on any player connected to the LMS server; it can also be setup as a phone-centric music player used to browse and play content in your phone, when used in combination with the [squeezelite](https://github.com/arigit/squeezelite) app that needs to be installed in the phone as well for local (in-phone) playback.
 
 It includes a fully-featured android-auto (in-car) interface, this is the key difference with the excellent [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app). It builds upon the great work done by [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto) but changes the focus of the Android Auto support from 
 "in-car server" to remote (in-home) server streaming, that would be your Lyrion server at home, with your phone reaching it over cellular + VPN / Tailscale.
+
+**The only purpose of this fork is to add android-auto support to upstream lms-material-app and squeezelite-app. I will do my best to keep up with new upstream releases until a PR for this functionality is accepted** which could take a long time given the amount of changes.
 
 Modifications to the upstream lms-material and squeezelite android apps run a bit deep as I found with them, almost invariably, after connecting the phone to the car and accessing the LMS-material app UI, Playback attempts failed for different reasons, typically related to squeezelite not running, or running but not started, or the wrong player got auto-selected for playback (so the kitchen speaker would start playing music shortly after turning on the car :), or wrong library view etc. Extensive changes done to ensure the primary phone-centric use case "just works" when you get in the car and hit Play or when auto-resume engages.
 
