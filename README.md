@@ -12,7 +12,7 @@ Modifications to the upstream lms-material and squeezelite android apps run a bi
 
 Changes were needed in squeezelite, the largest is related to buffering: larger buffer options and "next song" buffering are now supported. This is meant to avoid audio drops and stutter due to cellular coverage gaps; I tested this extensively during long commutes, streaming 24/96 and 24/192 original FLAC music with excellent results. It is also possible to setup squeezelite to have server-side mp3 transcoding but I haven't tested that.
 
-The development of this fork has been done entirely by Claude Code. I made all the decisions, all the car testing and a lot of debugging, but all of the code development and the changes are entirely AI. 
+The development of this fork has been done entirely with Claude Code. I made all the decisions, all the car testing and a lot of debugging, but all of the code development and the changes are entirely AI. 
 
 I hope that the changes can be merged back to the original repo ([CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app) and this repo eventually shelved. 
 
