@@ -101,5 +101,5 @@
     <string name="auto_ignore_connect_play">Ignore the car\'s play on connect</string>
     <string name="auto_ignore_connect_play_summary">Some cars send play a few seconds after connecting, which starts music even with Android Auto\'s \'Start music automatically\' off. Ignore a play from Android Auto in the first 15 seconds after the car connects.</string>
     <string name="auto_resume_on_connect">Resume after reconnecting</string>
-    <string name="auto_resume_on_connect_summary">When the car disconnects, remember the track and position. On the next connect, play from there if the track is still in the queue.</string>
+    <string name="auto_resume_on_connect_summary">When the car disconnects, remember the track and position. On the next connect, play from there if the player hasn\'t been used since.</string>
 </resources>

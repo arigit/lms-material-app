@@ -1,6 +1,7 @@
 package com.craigd.lmsmaterial.app;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 import org.junit.Test;
@@ -25,21 +26,20 @@ public class CarResumeTest {
         assertNull(CarResume.parse("p|1|-1|3"));
     }
 
+    private static final CarResume SAVED = new CarResume("p", 9, 2, 60000);
+
     @Test
-    public void findIndexAtSavedIndex() {
-        assertEquals(2, CarResume.findIndex(new long[]{7, 8, 9, 9}, 9, 2));
+    public void notMovedOn() {
+        assertNull(CarResume.movedOn(SAVED, 2, 9, 60000));
+        assertNull(CarResume.movedOn(SAVED, 2, 9, 0)); // restarted player, stopped at 0:00
+        assertNull(CarResume.movedOn(SAVED, 2, 9, 60000 + CarResume.PLAYED_ON_MS)); // played on until paused
     }
 
     @Test
-    public void findIndexNearestToSavedIndex() {
-        assertEquals(3, CarResume.findIndex(new long[]{9, 1, 2, 9, 5, 6}, 9, 5));
-        assertEquals(1, CarResume.findIndex(new long[]{1, 9, 2, 3}, 9, 0));
-    }
-
-    @Test
-    public void findIndexGone() {
-        assertEquals(-1, CarResume.findIndex(new long[]{1, 2, 3}, 9, 1));
-        assertEquals(-1, CarResume.findIndex(new long[0], 9, 0));
-        assertEquals(-1, CarResume.findIndex(null, 9, 0));
+    public void movedOn() {
+        assertNotNull(CarResume.movedOn(SAVED, 3, 10, 0)); // next track
+        assertNotNull(CarResume.movedOn(SAVED, 3, 9, 60000)); // same track, queue changed
+        assertNotNull(CarResume.movedOn(SAVED, 2, 10, 60000)); // another track at that index
+        assertNotNull(CarResume.movedOn(SAVED, 2, 9, 60001 + CarResume.PLAYED_ON_MS));
     }
 }

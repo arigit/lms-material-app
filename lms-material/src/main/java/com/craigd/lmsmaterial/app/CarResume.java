@@ -10,8 +10,8 @@ package com.craigd.lmsmaterial.app;
 import androidx.annotation.NonNull;
 
 /**
- * What the active player was playing when the car disconnected ("Resume after reconnecting"), so that the track
- * and position can be restored on the next connect if the track is still in the queue.
+ * What the active player was playing when the car disconnected ("Resume after reconnecting"), so that it can be
+ * played from there on the next connect, if the player hasn't moved on since.
  */
 public class CarResume {
     public final String player;
@@ -48,20 +48,26 @@ public class CarResume {
     }
 
     /**
-     * Where the track is in the queue (ids holds the track ID at each playlist index): the saved index if it still
-     * holds the track, else the nearest index that does, or -1 if the track is no longer in the queue.
+     * Played on this far past the saved position, the player was used after the car disconnected. Allows for it
+     * playing on a little after the state was saved, until the disconnect paused it.
      */
-    public static int findIndex(long[] ids, long trackId, int savedIndex) {
-        if (null==ids || trackId <= 0) {
-            return -1;
+    public static final long PLAYED_ON_MS = 15000;
+
+    /**
+     * Why the player has moved on since the state was saved (the current queue index, track ID and position, 0 if
+     * stopped), or null if it hasn't and the saved position should be played.
+     */
+    public static String movedOn(CarResume resume, int index, long trackId, long time) {
+        if (trackId != resume.trackId) {
+            return "another track is current";
         }
-        int found = -1;
-        for (int i = 0; i < ids.length; i++) {
-            if (ids[i] == trackId && (found < 0 || Math.abs(i - savedIndex) < Math.abs(found - savedIndex))) {
-                found = i;
-            }
+        if (index != resume.index) {
+            return "the track is at another queue index";
         }
-        return found;
+        if (time > resume.time + PLAYED_ON_MS) {
+            return "the track was played on";
+        }
+        return null;
     }
 
     @NonNull
