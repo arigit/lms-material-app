@@ -3,7 +3,7 @@ name: Build APK
 on:
   push:
     branches: [ master, build/** ]
-    # A v<versionName> tag (e.g. v0.10.2-ar1) also publishes a GitHub Release with the APK
+    # A v<versionName> tag (e.g. v0.10.2-ar.0.1) also publishes a GitHub Release with the APK
     tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
@@ -70,12 +70,12 @@ jobs:
             echo "Tag $TAG does not match versionName $version" >&2
             exit 1
           fi
-          apk="Lyrion-ar-$version.apk"
+          apk="lms-material-app-ar-$version.apk"
           cp lms-material/build/outputs/apk/release/*.apk "$apk"
           # Its player too, so that both APKs are in one place
           ptag=$(gh release view -R arigit/squeezelite --json tagName -q .tagName)
-          gh release download "$ptag" -R arigit/squeezelite --pattern 'Squeezelite-ar-*.apk'
-          player=$(ls Squeezelite-ar-*.apk)
+          gh release download "$ptag" -R arigit/squeezelite --pattern 'squeezelite-ar-*.apk'
+          player=$(ls squeezelite-ar-*.apk)
           players=https://github.com/arigit/squeezelite/releases
           gh release create "$TAG" "$apk" "$player" --title "lms-material-app (ar) $version" \
             --notes "lms-material-app (ar) $version (shown on the phone as Lyrion (ar)). Install both APKs: $apk and its player $player (the latest Squeezelite (ar) release, from $players) - see the README for setup.
