@@ -1,35 +1,32 @@
 <img width="1055" height="511" alt="image" src="https://github.com/user-attachments/assets/80244f9d-2510-40f8-9c37-2bd4ab29af21" />
 
-
 # Introduction
-This is an Android-app that can act as a controller of a Lyrion Music Server (LMS), allowing you to play audio on any player connected to the LMS server; it can also be setup as a phone-centric app used to browse and play content in your phone.
+This is an Android-app that can act as a controller of a Lyrion Music Server (LMS), allowing you to play audio on any player connected to the LMS server; it can also be setup as a phone-centric music player used to browse and play content in your phone, when used in combination with the [squeezelite](https://github.com/arigit/squeezelite) app that needs to be installed in the phone as well for local (in-phone) playback.
 
-It includes a fully-featured android-auto (in-car) interface, this is the key difference with the excellent [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app). It build upon the great work done by [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto) but changes the focus from in-car server to remote (in-home) server.
+It includes a fully-featured android-auto (in-car) interface, this is the key difference with the excellent [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app). It builds upon the great work done by [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto) but changes the focus of the Android Auto support from 
+"in-car server" to remote (in-home) server streaming, that would be your Lyrion server at home, with your phone reaching it over cellular + VPN / Tailscale.
 
+Modifications to the upstream lms-material and squeezelite android apps run a bit deep as I found that almost invariably, after connecting the phone to the car and accessing the LMS app UI, Playback will fail, for different reasons, typically related to squeezelite not running, or running but not started, or wrong player selected (so the kitchen speaker would start playing after turning on the car :), or wrong library view etc. Extensive changes done to ensure the primary phone-centric use case "just works" when you get in the car.
 
+I also implemented changes in squeezelite, the largest is related to buffering: we have larger buffer options and "next song" buffering as well. This is meant to avoid cuts due to short cellular coverage gaps; I tested this extensively during long commutes, streaming 24/96 and 24/192 original FLAC music with excellent results. It is possible to setup squeezelite to have server-side mp3 transcoding (I haven't tested that).
 
+The development of this fork has been done entirely by Claude Code. While I made all the decisions, all the car testing and a lot of debugging, the code development and the changes are entirely AI. 
 
+I hope that the changes can be merged back to the original repo ([CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app) and this repo eventually shelved. 
 
-This application *requires* that you run LMS and have the Material-Skin plugin
-installed. However, it is not required for Material to be set as the default
-skin.
+## Requirements
+Two apps are required, pick the latest releases of both:
+- https://github.com/arigit/squeezelite/releases
+- https://github.com/arigit/lms-material-app/releases
 
-## Upstream
-This repository is [arigit/lms-material-app](https://github.com/arigit/lms-material-app), a fork with Android Auto support (see below). Its upstream sources are:
+The APKs need a recent android platform and need to be side-loaded after enabling 
 
-- [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app): the LMS Material app, by Craig Drummond
-- [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto): Android Auto support, added to CDrummond's app by chrober.
-
-# Requirements
-
-- [arigit/squeezelite](https://github.com/arigit/squeezelite), forked from [chrober/squeezelite](https://github.com/chrober/squeezelite/tree/build/android-auto-apk)
-
-# lms-material-app (ar): about this fork
+## Key New Features
 This fork build on the work done by upstream adding:
 
 - optimized for **in-car playback of a remote music collection**: your music stays on your Lyrion Music Server at home, and the phone streams it to the car through Android Auto over cellular 
 
-- tries to provide a 'just works' solution for LMS users: assumes by default that you will use a local player squeezelite player in the phone auto-starts it, can be setup to auto-resume queue playback upon connection
+- tries to provide a 'just works' solution for LMS users:  assumes by default that you will use a local player squeezelite player in the phone auto-starts it, can be setup to auto-resume queue playback upon connection
 
 - it supports in-car queue management (add to queue) 
 
