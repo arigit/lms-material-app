@@ -46,6 +46,7 @@ import android.support.v4.media.session.PlaybackStateCompat;
 import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
+import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -425,6 +426,21 @@ public class ControlService extends MediaBrowserServiceCompat {
     private synchronized MediaSessionCompat.Callback getMediaSessionCallback() {
         if (null==mediaSessionCallback) {
             mediaSessionCallback = new MediaSessionCompat.Callback() {
+                // Media keys (e.g. a car's buttons) arrive here before onPlay/onPause; a tap on Android Auto's
+                // screen calls those directly. Logged to tell the car's own play (after it is switched off and on
+                // with Android Auto still connected) from the driver's.
+                @Override
+                public boolean onMediaButtonEvent(Intent mediaButtonEvent) {
+                    KeyEvent event = mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                    if (null!=event) {
+                        Utils.debug(KeyEvent.keyCodeToString(event.getKeyCode()) + " " +
+                                (KeyEvent.ACTION_DOWN==event.getAction() ? "down" : "up") + ", repeat:" +
+                                event.getRepeatCount() + ", device:" + event.getDeviceId() + ", source:0x" +
+                                Integer.toHexString(event.getSource()) + ", from " + controllerName());
+                    }
+                    return super.onMediaButtonEvent(mediaButtonEvent);
+                }
+
                 @Override
                 public void onPlay() {
                     Utils.debug("from " + controllerName());
