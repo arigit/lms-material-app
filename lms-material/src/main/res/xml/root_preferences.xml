@@ -167,6 +167,12 @@
             app:key="auto_ignore_connect_play"
             app:summary="@string/auto_ignore_connect_play_summary"
             app:title="@string/auto_ignore_connect_play" />
+        <SwitchPreferenceCompat
+            android:defaultValue="false"
+            app:iconSpaceReserved="false"
+            app:key="auto_resume_on_connect"
+            app:summary="@string/auto_resume_on_connect_summary"
+            app:title="@string/auto_resume_on_connect" />
     </PreferenceCategory>
 
     <PreferenceCategory
