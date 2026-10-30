@@ -56,19 +56,53 @@ This fork builds on the work done by upstream adding:
 
 
 ## Recommended Settings for Phone-Centric Users
-For users seeking to mainly use lms-material-app + squeezelite in the phone, streaming from their home server, the following initial settings could help get a 'just works' user experience without all the trial and error
+For users seeking to mainly use lms-material-app + squeezelite in the phone, streaming from their home server, the following initial settings could help get a 'just works' initial user experience without all the trial and error.
+The list of settings below is not exhaustive.
+There are three configuration points to check: each of the android apps, and the settings in the server-side for your phone.
 
 ### Settings in lms-material-app (Lyrion app in the phone)
-
+- Player App: Squeezelite (ar)
+- Auto-start player: ON
+- Add menu entry to start player: ON
+- Stop player when Quit: ON
+- Android Auto:
+  - When album is selected: show tracks
+  - Ignore the car's play on connect: ON
+  - Resume after reconnecting: ON
+- Default Player: (set to the player name you chose in the squeezelite app config; avoid apostrophes "'" in this name)
+- Only Control Default: ON
 
 ### Settings in squeezelite-app (Squeezelite app in the phone)
+- Name: choose a name without apostrophes "'"
+- Volume control: Synchronized with Android
+- Bit-rate limit: Server setting
+- Buffer size: 64MB (+46MB next-track buffer)
+- Restore Volume: OFF
+- Stop on Power Off: ON
+- Use Audio Focus: ON
+- Use ID and Name: OFF
+- Send Track Details: OFF (otherwise, in-car a second active player shows in android auto besides lms-material, creating confusion)
+- Auto-start when device connects: None
+- Start player when android auto connects: OFF (lms-app will manage start/stop in-car)
+- Stop player on disconnect: OFF
+- Android Auto:
+  - Pause on android auto disconnect: OFF
 
 
 ### Settings in your Lyrion LMS Server, Player Section
-Select your Phone's player name and set:
+To inspect the server-side config, for your phone player, you can use a desktop web browser to access the web UI of your server, or you can use your phone and the lms-material-app after setting: "Only control default": OFF  (put it back ON after configuring the below)
+
+Select your Phone's player name and: scroll to the bottom of the config page and select "Extra Settings"
 
 - Audio
-
+  - Power On Resume: Stop at power off / Remain stopped at power on
+  - Volume Control: volume control adjusts outputs
+  - Bitrate limiting: No limit (here you can force the server to transcode to mp3 if your cellular network doesn't offer enough bandwidth)
+  - Volume Adjustment / replay gain: Smart Gain (only acts if your tracks are tagged with Replay Gain, which is useful specially when shuffling tracks from different albums)
+    
+- Player Power-On Volume
+  - Set last value: Disabled
+    
 
 # Donations
 
