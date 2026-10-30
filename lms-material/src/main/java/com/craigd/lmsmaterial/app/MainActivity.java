@@ -288,7 +288,10 @@ public class MainActivity extends AppCompatActivity {
             if (addStartPlayer) {
                 builder.appendQueryParameter("ipAddresses", String.join(",", getLocalIpAddresses()));
             }
-            return builder.build().toString()+
+            // Uri.Builder leaves ' unencoded, but the WebView reports the URL with it as %27: onPageStarted would
+            // then not recognise the page, and the load timeout would open the settings (e.g. a default player
+            // named "John's S25").
+            return builder.build().toString().replace("'", "%27")+
                     // Can't use Uri.Builder for the following as MaterialSkin expects that values to *not* be URL encoded!
                     "&hide=notif,scale" +
                     "&appSettings="+SETTINGS_URL+
