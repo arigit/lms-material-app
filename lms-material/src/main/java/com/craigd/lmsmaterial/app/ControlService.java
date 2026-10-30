@@ -217,6 +217,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
         if (AutoTabOrder.PREF_KEY.equals(key)) {
             notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
+        } else if (LmsBrowseHelper.SHOW_UNPLAYED_PREF_KEY.equals(key)) {
+            notifyChildrenChanged(LmsBrowseHelper.RELEASES_GROUP_ID);
+            getBrowseHelper().prefetchPlayCounts();
         } else if (MainActivity.CURRENT_PLAYER_ID_KEY.equals(key)) {
             activePlayerChanged();
         } else if (SettingsActivity.SINGLE_PLAYER_PREF_KEY.equals(key) || SettingsActivity.DEFAULT_PLAYER_PREF_KEY.equals(key)) {
@@ -1483,6 +1486,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
         lastAutoConnect = now;
         Utils.debug("Android Auto connected");
+        getBrowseHelper().prefetchPlayCounts();
         // Queued before Android Auto's first loadChildren, so the root and its lists use a valid selection.
         getBrowseExecutor().execute(() -> {
             if (getBrowseHelper().ensureLibrarySelected()) {

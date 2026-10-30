@@ -395,6 +395,7 @@ public class SettingsActivity extends AppCompatActivity {
                 case AutoTabOrder.PLAYLISTS: return getString(R.string.auto_tab_playlists);
                 case AutoTabOrder.PLAYERS: return getString(R.string.auto_tab_players);
                 case AutoTabOrder.LIBRARIES: return getString(R.string.auto_tab_libraries);
+                case AutoTabOrder.COPY_QUEUE: return getString(R.string.auto_tab_copy_queue);
                 default: return tab;
             }
         }
