@@ -24,7 +24,11 @@ import org.json.JSONObject;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -56,6 +60,8 @@ public class LmsBrowseHelper {
     public static final String LIBRARIES_ID = "__LIBRARIES__";
     public static final String COPY_QUEUE_ID = "__COPY_QUEUE__";
     public static final String SHOW_UNPLAYED_PREF_KEY = "auto_show_unplayed";
+    public static final String REDISCOVER_MONTHS_PREF_KEY = "auto_rediscover_months";
+    private static final String DEFAULT_REDISCOVER_MONTHS = "12";
     private static final String COPY_QUEUE_PREFIX = "copyqueue/"; // + ID of the player to copy the queue from
     public static final String ALBUM_CLICK_PREF_KEY = "auto_album_click";
     public static final String ALBUM_CLICK_TRACKS = "tracks";
@@ -77,9 +83,6 @@ public class LmsBrowseHelper {
     private static final int SEARCH_LIMIT = 50;
     private static final int TIMEOUT_MS = 15000;
     private static final int INDEX_TIMEOUT_MS = 45000;
-    // Rediscover / Unplayed Albums leave out this many most recently played albums (LMS has no last-played date
-    // to go by; its recently played list stops at 500 anyway).
-    private static final int REDISCOVER_SKIP_RECENT = 500;
     private static final int REDISCOVER_PAGE_SIZE = 100;
     // Unplayed Albums needs play counts, from one query over all tracks (~4MB for 55k tracks), so they are cached.
     private static final long PLAY_COUNTS_MAX_AGE_MS = 24 * 60 * 60 * 1000L;
@@ -97,8 +100,8 @@ public class LmsBrowseHelper {
     private List<GroupIndex> allArtistIndex = null;
     private List<GroupIndex> albumsAlphaIndex = null;
     private volatile AlbumTracks lastAlbumTracks = null;
-    // Shuffled album IDs of the Rediscover / Unplayed list being shown, for its "More" pages
-    private final Map<String, List<String>> shuffledLists = new java.util.concurrent.ConcurrentHashMap<>();
+    // Rediscover / Unplayed Albums, built once a day (per library and setting), in an order fixed for the day
+    private final Map<String, DailyList> dailyLists = new java.util.concurrent.ConcurrentHashMap<>();
     private final Object playCountsLock = new Object();
     private UnplayedAlbums unplayedAlbums = null;
 
@@ -152,7 +155,7 @@ public class LmsBrowseHelper {
         allArtistIndex = null;
         albumsAlphaIndex = null;
         lastAlbumTracks = null;
-        shuffledLists.clear();
+        dailyLists.clear();
         synchronized (playCountsLock) {
             unplayedAlbums = null;
         }
@@ -779,29 +782,45 @@ public class LmsBrowseHelper {
         return buildAlbumItem(album.optString("id", ""), title, album.optString("artist", ""), albumArtUri(album));
     }
 
+    private static final class DailyList {
+        final String key;
+        final List<String> ids;
+
+        DailyList(String key, List<String> ids) {
+            this.key = key;
+            this.ids = ids;
+        }
+    }
+
     /**
-     * Rediscover Albums (all albums, played or not) or Unplayed Albums, less the most recently played, in random
-     * order. Reshuffled whenever the list is opened; its "More" pages follow that order.
+     * Rediscover Albums (all albums, played or not, without a play in the last N months, from LMS's per-track last
+     * played time) or Unplayed Albums (no plays), in random order. Built once a day, like the order: unlike Random,
+     * the list stays the same through the day (and app restarts), and its "More" pages follow that order.
      */
     private List<MediaBrowserCompat.MediaItem> loadShuffledAlbums(String listId, int offset) {
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
         try {
-            List<String> ids = shuffledLists.get(listId);
-            if (0==offset || null==ids) {
-                List<String> source = ALBUMS_UNPLAYED_ID.equals(listId) ? unplayedAlbumIds() : albumIds(null, BROWSE_LIMIT);
-                if (null==source) return items;
-                // Read every time, so an album played since the play counts were fetched drops out at once.
-                Set<String> recent = new HashSet<>(albumIds("sort:recentlyplayed", REDISCOVER_SKIP_RECENT));
-                ids = new ArrayList<>();
-                for (String id : source) {
-                    if (!recent.contains(id)) {
-                        ids.add(id);
+            String day = String.format(Locale.US, "%tF", new Date());
+            int months = rediscoverMonths();
+            String key = listId + "|" + getLibraryId() + "|" + months + "|" + day;
+            DailyList list = dailyLists.get(listId);
+            if (null==list || !key.equals(list.key)) {
+                List<String> source;
+                if (ALBUMS_UNPLAYED_ID.equals(listId)) {
+                    source = unplayedAlbumIds();
+                } else {
+                    Set<String> played = albumsPlayedSince(months);
+                    source = null==played ? null : albumIds(null, BROWSE_LIMIT);
+                    if (null!=source) {
+                        source.removeAll(played);
                     }
                 }
-                Collections.shuffle(ids);
-                shuffledLists.put(listId, ids);
-                Utils.debug(listId + ": " + ids.size() + " albums");
+                if (null==source) return items;
+                list = new DailyList(key, dailyOrder(source, day));
+                dailyLists.put(listId, list);
+                Utils.debug(listId + ": " + list.ids.size() + " albums");
             }
+            List<String> ids = list.ids;
             if (offset >= ids.size()) return items;
             List<String> page = ids.subList(offset, Math.min(offset + REDISCOVER_PAGE_SIZE, ids.size()));
             List<String> params = new ArrayList<>(Arrays.asList("albums", "0", String.valueOf(page.size()),
@@ -832,6 +851,63 @@ public class LmsBrowseHelper {
             Utils.error("Failed to load " + listId, e);
         }
         return items;
+    }
+
+    private int rediscoverMonths() {
+        try {
+            return Integer.parseInt(prefs.getString(REDISCOVER_MONTHS_PREF_KEY, DEFAULT_REDISCOVER_MONTHS));
+        } catch (NumberFormatException e) {
+            return Integer.parseInt(DEFAULT_REDISCOVER_MONTHS);
+        }
+    }
+
+    /**
+     * The order of a daily list: random, the same all day, and an album dropping out (or added) doesn't reorder the
+     * others. Each ID is ranked by a hash of the day and the ID.
+     */
+    static List<String> dailyOrder(Collection<String> ids, String day) {
+        long seed = day.hashCode();
+        List<String> ordered = new ArrayList<>(ids);
+        ordered.sort(Comparator.comparingLong((String id) -> mix64(seed * 1000003L + id.hashCode())).thenComparing(id -> id));
+        return ordered;
+    }
+
+    private static long mix64(long z) {
+        z = (z ^ (z >>> 33)) * 0xff51afd7ed558ccdL;
+        z = (z ^ (z >>> 33)) * 0xc4ceb9fe1a85ec53L;
+        return z ^ (z >>> 33);
+    }
+
+    /**
+     * The active library's albums with a track played in the last months, or null. LMS keeps each track's last play
+     * time (tracks_persistent.lastplayed) but has no query tag returning it, so it's used as a raw SQL condition;
+     * play data is only joined when the condition mentions playcount.
+     */
+    private Set<String> albumsPlayedSince(int months) {
+        Calendar since = Calendar.getInstance();
+        since.add(Calendar.MONTH, -months);
+        try {
+            List<String> params = new ArrayList<>(Arrays.asList("titles", "0", String.valueOf(PLAY_COUNTS_TRACK_LIMIT),
+                    "search:sql=tracks_persistent.playcount > 0 AND tracks_persistent.lastplayed > " + since.getTimeInMillis() / 1000,
+                    "tags:e"));
+            addLibraryParam(params);
+            JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), INDEX_TIMEOUT_MS);
+            JSONObject result = null==resp ? null : resp.optJSONObject("result");
+            if (null==result) return null;
+            JSONArray loop = result.optJSONArray("titles_loop");
+            Set<String> albums = new HashSet<>();
+            for (int i = 0; null!=loop && i < loop.length(); i++) {
+                String album = loop.getJSONObject(i).optString("album_id", "");
+                if (!album.isEmpty()) {
+                    albums.add(album);
+                }
+            }
+            Utils.debug("Played in the last " + months + " months: " + (null==loop ? 0 : loop.length()) + " tracks, " + albums.size() + " albums");
+            return albums;
+        } catch (Exception e) {
+            Utils.error("Failed to fetch recently played albums", e);
+            return null;
+        }
     }
 
     // IDs of the active library's albums, in the given sort order; tags:x keeps the reply small (~120 bytes per album).
@@ -1699,7 +1775,7 @@ public class LmsBrowseHelper {
         allArtistIndex = null;
         albumsAlphaIndex = null;
         lastAlbumTracks = null;
-        shuffledLists.clear(); // the unplayed albums are refetched for the new library
+        dailyLists.clear(); // rebuilt for the new library
     }
 
     private String normalizeTextkey(String textkey) {
