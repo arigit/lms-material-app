@@ -1709,7 +1709,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         lastAutoConnect = now;
         Utils.debug("Android Auto connected");
         loadCarResume();
-        getBrowseHelper().prefetchPlayCounts();
+        getBrowseHelper().prefetchDailyLists();
         // Queued before Android Auto's first loadChildren, so the root and its lists use a valid selection.
         getBrowseExecutor().execute(() -> {
             if (getBrowseHelper().ensureLibrarySelected()) {

@@ -103,6 +103,7 @@ public class LmsBrowseHelper {
     // Rediscover / Unplayed Albums, built once a day (per library and setting), in an order fixed for the day
     private final Map<String, DailyList> dailyLists = new java.util.concurrent.ConcurrentHashMap<>();
     private final Object playCountsLock = new Object();
+    private final Object dailyListsLock = new Object();
     private UnplayedAlbums unplayedAlbums = null;
 
     private static final String[] RELEASE_TYPE_ORDER = {"ALBUM", "EP", "BOXSET", "BESTOF", "COMPILATION", "SINGLE", "APPEARANCE"};
@@ -800,28 +801,8 @@ public class LmsBrowseHelper {
     private List<MediaBrowserCompat.MediaItem> loadShuffledAlbums(String listId, int offset) {
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
         try {
-            String day = String.format(Locale.US, "%tF", new Date());
-            int months = rediscoverMonths();
-            String key = listId + "|" + getLibraryId() + "|" + months + "|" + day;
-            DailyList list = dailyLists.get(listId);
-            if (null==list || !key.equals(list.key)) {
-                List<String> source;
-                if (ALBUMS_UNPLAYED_ID.equals(listId)) {
-                    source = unplayedAlbumIds();
-                } else {
-                    Set<String> played = albumsPlayedSince(months);
-                    source = null==played ? null : albumIds(null, BROWSE_LIMIT);
-                    if (null!=source) {
-                        source.removeAll(played);
-                    }
-                }
-                if (null==source) return items;
-                list = new DailyList(key, dailyOrder(source, day));
-                dailyLists.put(listId, list);
-                Utils.debug(listId + ": " + list.ids.size() + " albums");
-            }
-            List<String> ids = list.ids;
-            if (offset >= ids.size()) return items;
+            List<String> ids = dailyListIds(listId);
+            if (null==ids || offset >= ids.size()) return items;
             List<String> page = ids.subList(offset, Math.min(offset + REDISCOVER_PAGE_SIZE, ids.size()));
             List<String> params = new ArrayList<>(Arrays.asList("albums", "0", String.valueOf(page.size()),
                     "album_id:" + String.join(",", page), "tags:ajlsy"));
@@ -851,6 +832,52 @@ public class LmsBrowseHelper {
             Utils.error("Failed to load " + listId, e);
         }
         return items;
+    }
+
+    // Today's album IDs of Rediscover or Unplayed Albums (built if needed), or null. Its own lock: built either here
+    // for the list being opened, or in the background on car connect (prefetchDailyLists), never both at once.
+    private List<String> dailyListIds(String listId) throws Exception {
+        synchronized (dailyListsLock) {
+            String day = String.format(Locale.US, "%tF", new Date());
+            int months = rediscoverMonths();
+            String key = listId + "|" + getLibraryId() + "|" + months + "|" + day;
+            DailyList list = dailyLists.get(listId);
+            if (null!=list && key.equals(list.key)) {
+                return list.ids;
+            }
+            List<String> source;
+            if (ALBUMS_UNPLAYED_ID.equals(listId)) {
+                source = unplayedAlbumIds();
+            } else {
+                Set<String> played = albumsPlayedSince(months);
+                source = null==played ? null : albumIds(null, BROWSE_LIMIT);
+                if (null!=source) {
+                    source.removeAll(played);
+                }
+            }
+            if (null==source) return null;
+            list = new DailyList(key, dailyOrder(source, day));
+            dailyLists.put(listId, list);
+            Utils.debug(listId + ": " + list.ids.size() + " albums");
+            return list.ids;
+        }
+    }
+
+    /**
+     * Build today's Rediscover (and Unplayed) Albums in the background, e.g. on car connect: on cellular the queries
+     * take a few seconds, which would otherwise hold up the first opening of the list (and other lists behind it).
+     */
+    public void prefetchDailyLists() {
+        new Thread(() -> {
+            try {
+                dailyListIds(ALBUMS_REDISCOVER_ID);
+                if (showUnplayed()) {
+                    dailyListIds(ALBUMS_UNPLAYED_ID);
+                }
+            } catch (Exception e) {
+                Utils.error("Failed to prefetch the daily album lists", e);
+            }
+        }, "DailyLists").start();
     }
 
     private int rediscoverMonths() {
