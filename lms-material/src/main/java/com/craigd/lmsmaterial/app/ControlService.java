@@ -235,6 +235,12 @@ public class ControlService extends MediaBrowserServiceCompat {
         } else if (LmsBrowseHelper.SHOW_UNPLAYED_PREF_KEY.equals(key)) {
             notifyChildrenChanged(LmsBrowseHelper.RELEASES_GROUP_ID);
             getBrowseHelper().prefetchPlayCounts();
+        } else if (LmsBrowseHelper.ACTIVE_LIBRARY_PREF_KEY.equals(key)) {
+            // Also set from the phone UI (MainActivity syncs the two both ways).
+            getBrowseExecutor().execute(() -> {
+                getBrowseHelper().clearLibraryCaches();
+                handler.post(() -> selectionChanged(false));
+            });
         } else if (MainActivity.CURRENT_PLAYER_ID_KEY.equals(key)) {
             activePlayerChanged();
         } else if (SettingsActivity.SINGLE_PLAYER_PREF_KEY.equals(key) || SettingsActivity.DEFAULT_PLAYER_PREF_KEY.equals(key)) {

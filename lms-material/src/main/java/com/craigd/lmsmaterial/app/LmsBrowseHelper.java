@@ -1397,6 +1397,11 @@ public class LmsBrowseHelper {
     }
 
     private JSONArray fetchLibraries() {
+        return fetchLibraries(rpc);
+    }
+
+    /** LMS's libraries, or null if LMS couldn't be asked. */
+    public static JSONArray fetchLibraries(JsonRpc rpc) {
         try {
             JSONObject resp = rpc.sendMessageSync("", new String[]{"libraries"}, TIMEOUT_MS);
             JSONObject result = null==resp ? null : resp.optJSONObject("result");
@@ -1407,6 +1412,24 @@ public class LmsBrowseHelper {
             Utils.debug("Failed to load libraries: " + e.getMessage());
             return null;
         }
+    }
+
+    public static boolean isKnownLibrary(JSONArray libraries, String id) {
+        return null!=libraryName(libraries, id);
+    }
+
+    /**
+     * The library ID to store in the shared "active_library" pref: null for All (and for anything that isn't
+     * a plain LMS library ID).
+     */
+    public static String normalizeLibraryId(String id) {
+        if (null==id) return null;
+        id = id.trim();
+        if (id.isEmpty() || ALL_LIBRARIES_ID.equals(id) || "0".equals(id) || "__ALL__".equals(id) ||
+                !id.matches("[A-Za-z0-9_.-]{1,64}")) {
+            return null;
+        }
+        return id;
     }
 
     private static String libraryName(JSONArray libraries, String id) {
@@ -1667,6 +1690,11 @@ public class LmsBrowseHelper {
         } else {
             prefs.edit().putString(ACTIVE_LIBRARY_PREF_KEY, libraryId).apply();
         }
+        clearLibraryCaches();
+    }
+
+    /** Drop what was loaded for the previous library. Call on the browse thread. */
+    public void clearLibraryCaches() {
         albumArtistIndex = null;
         allArtistIndex = null;
         albumsAlphaIndex = null;
