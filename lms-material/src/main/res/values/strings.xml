@@ -103,4 +103,13 @@
     <string name="auto_ignore_connect_play_summary">Some cars send play a few seconds after connecting, which starts music even with Android Auto\'s \'Start music automatically\' off. Ignore a play from Android Auto in the first 15 seconds after the car connects.</string>
     <string name="auto_resume_on_connect">Resume after reconnecting</string>
     <string name="auto_resume_on_connect_summary">When the car disconnects, remember the track and position. On the next connect, play from there if the player hasn\'t been used since.</string>
+    <string name="kiosk_mode">Kiosk mode</string>
+    <string name="kiosk_mode_summary">Require a PIN to open these settings. Applies to this device only.</string>
+    <string name="kiosk_mode_enabled_summary">Enabled. Tap to disable.</string>
+    <string name="kiosk_set_pin">Set kiosk PIN</string>
+    <string name="kiosk_repeat_pin">Repeat PIN</string>
+    <string name="kiosk_enter_pin">Enter kiosk PIN</string>
+    <string name="kiosk_wrong_pin">Wrong PIN</string>
+    <string name="kiosk_pin_too_short">PIN must be at least 4 digits</string>
+    <string name="kiosk_pin_mismatch">PINs do not match</string>
 </resources>

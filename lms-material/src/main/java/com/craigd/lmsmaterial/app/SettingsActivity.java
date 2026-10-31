@@ -372,6 +372,24 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
+            final Preference kioskPref = getPreferenceManager().findPreference("kiosk_mode");
+            if (kioskPref != null) {
+                updateKioskSummary(kioskPref, sharedPreferences);
+                kioskPref.setOnPreferenceClickListener(arg0 -> {
+                    if (getContext() != null) {
+                        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getContext());
+                        if (KioskMode.isEnabled(prefs)) {
+                            // Settings can only be open if the PIN was already entered
+                            KioskMode.disable(prefs);
+                            updateKioskSummary(kioskPref, prefs);
+                        } else {
+                            KioskMode.askNewPin(getContext(), prefs, () -> updateKioskSummary(kioskPref, prefs));
+                        }
+                    }
+                    return true;
+                });
+            }
+
             if (Utils.cutoutTopLeft(activity)) {
                 SwitchPreferenceCompat fullscreenPref = getPreferenceManager().findPreference(FULLSCREEN_PREF_KEY);
                 if (null != fullscreenPref) {
@@ -479,6 +497,10 @@ public class SettingsActivity extends AppCompatActivity {
             button.setAlpha(enabled ? 1.0f : 0.3f);
             button.setOnClickListener(v -> action.run());
             return button;
+        }
+
+        private void updateKioskSummary(Preference pref, SharedPreferences prefs) {
+            pref.setSummary(KioskMode.isEnabled(prefs) ? R.string.kiosk_mode_enabled_summary : R.string.kiosk_mode_summary);
         }
 
         @Override
