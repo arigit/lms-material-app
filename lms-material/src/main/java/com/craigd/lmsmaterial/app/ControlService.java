@@ -205,6 +205,10 @@ public class ControlService extends MediaBrowserServiceCompat {
     private CarResume carResume;
     private boolean carResumeChecking;
     private boolean carResumePlay; // a play arrived during the check
+    // The player last seen playing, and when (elapsedRealtime, also set when it stops playing): whether it was
+    // playing shortly before the car disconnected.
+    private String playingPlayer;
+    private long playingSeenAt;
     private boolean carConnected;
     private boolean carStateConnected; // last state read from Android Auto's car connection provider
     private BroadcastReceiver carConnectionReceiver;
@@ -790,6 +794,10 @@ public class ControlService extends MediaBrowserServiceCompat {
     public synchronized void updatePlayerStatus(PlayerStatus status) {
         if (null!=cometClient && cometClient.isConnected() && null!=status && (null==lastStatus || (status.id.equals(lastStatus.id) && !lastStatus.isPlaying && status.isPlaying))) {
             cometClient.getPlayerStatus(status.id);
+        }
+        if (null!=status && (status.isPlaying || (null!=lastStatus && lastStatus.isPlaying && status.id.equals(lastStatus.id)))) {
+            playingPlayer = status.id;
+            playingSeenAt = SystemClock.elapsedRealtime();
         }
         lastStatus = status;
         checkResumePosition(status);
@@ -1422,8 +1430,9 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         PlayerStatus status = lastStatus;
+        long sincePlaying = playerId.equals(playingPlayer) ? SystemClock.elapsedRealtime() - playingSeenAt : -1;
         getBrowseExecutor().execute(() -> {
-            CarResume state = fetchCarState(playerId, status);
+            CarResume state = fetchCarState(playerId, status, sincePlaying);
             Utils.debug("Saving car state: " + state);
             if (null==state) {
                 prefs.edit().remove(CAR_RESUME_STATE_PREF_KEY).apply();
@@ -1433,9 +1442,10 @@ public class ControlService extends MediaBrowserServiceCompat {
         });
     }
 
-    // The player's current track and position, from LMS, or from the last status if LMS can't be reached.
+    // The player's current track and position, from LMS, or from the last status if LMS can't be reached; null if
+    // it wasn't playing (CarResume.wasPlaying; sincePlaying: ms since it was last seen playing, -1 if not).
     // Called on the browse executor.
-    private CarResume fetchCarState(String playerId, PlayerStatus status) {
+    private CarResume fetchCarState(String playerId, PlayerStatus status, long sincePlaying) {
         try {
             if (null==rpc) {
                 rpc = new JsonRpc(getApplicationContext());
@@ -1444,23 +1454,26 @@ public class ControlService extends MediaBrowserServiceCompat {
             JSONObject result = null==response ? null : response.optJSONObject("result");
             JSONArray loop = null==result ? null : result.optJSONArray("playlist_loop");
             JSONObject track = null==loop ? null : loop.optJSONObject(0);
-            if (null!=track && track.optLong("id", 0) > 0) {
-                long trackId = track.optLong("id", 0);
-                long time = (long) (result.optDouble("time", 0) * 1000.0);
-                if ("stop".equals(result.optString("mode")) && null!=status && playerId.equals(status.id) &&
-                        trackId==status.trackId) {
-                    time = displayTime(status); // stopped by Power, with the position saved
+            if (null!=result) {
+                String mode = result.optString("mode");
+                if (!CarResume.wasPlaying(mode, sincePlaying)) {
+                    Utils.debug("Not playing (" + mode + ", last played " + (sincePlaying < 0 ? "-" : (sincePlaying / 1000) + " s") + " ago)");
+                    return null;
                 }
-                return new CarResume(playerId, trackId, result.optInt("playlist_cur_index", 0), time);
+                if (null!=track && track.optLong("id", 0) > 0) {
+                    return new CarResume(playerId, track.optLong("id", 0), result.optInt("playlist_cur_index", 0),
+                            (long) (result.optDouble("time", 0) * 1000.0));
+                }
             }
         } catch (Exception e) {
             Utils.debug("Failed to read the status: " + e.getMessage());
         }
-        if (null==status || !playerId.equals(status.id) || status.trackId <= 0 || status.playlistIndex < 0) {
+        if (null==status || !playerId.equals(status.id) || status.trackId <= 0 || status.playlistIndex < 0 ||
+                !CarResume.wasPlaying(status.isPlaying ? "play" : status.mode, sincePlaying)) {
             return null;
         }
         return new CarResume(playerId, status.trackId, status.playlistIndex, status.isPlaying
-                ? status.time + SystemClock.elapsedRealtime() - status.timestamp : displayTime(status));
+                ? status.time + SystemClock.elapsedRealtime() - status.timestamp : status.time);
     }
 
     // The car connected: load the state saved at the last disconnect, to be played once the player is on.

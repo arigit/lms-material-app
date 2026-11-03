@@ -48,6 +48,25 @@ public class CarResume {
     }
 
     /**
+     * Paused at most this long before the car disconnected, the player still counts as playing then: switching the
+     * car off pauses it, and Android Auto stays connected about a minute longer (seen 47-53 s: it takes the audio focus, or sends
+     * pause).
+     */
+    public static final long PAUSED_BEFORE_DISCONNECT_MS = 80000;
+
+    /**
+     * Whether the player was playing when the car disconnected, from LMS's mode then and how long ago it was last
+     * seen playing (ms, negative if not seen). Only then is the state saved: a stopped player (the queue played to
+     * its end, Stop, or Power off) or one paused for a while isn't resumed.
+     */
+    public static boolean wasPlaying(String mode, long sincePlaying) {
+        if ("play".equals(mode)) {
+            return true;
+        }
+        return "pause".equals(mode) && sincePlaying >= 0 && sincePlaying <= PAUSED_BEFORE_DISCONNECT_MS;
+    }
+
+    /**
      * Played on this far past the saved position, the player was used after the car disconnected. Allows for it
      * playing on a little after the state was saved, until the disconnect paused it.
      */
