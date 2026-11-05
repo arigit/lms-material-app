@@ -24,12 +24,10 @@ import org.json.JSONObject;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -37,7 +35,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 public class LmsBrowseHelper {
     public static final String ACTIVE_LIBRARY_PREF_KEY = "active_library";
@@ -60,8 +57,9 @@ public class LmsBrowseHelper {
     public static final String LIBRARIES_ID = "__LIBRARIES__";
     public static final String COPY_QUEUE_ID = "__COPY_QUEUE__";
     public static final String SHOW_UNPLAYED_PREF_KEY = "auto_show_unplayed";
-    public static final String REDISCOVER_MONTHS_PREF_KEY = "auto_rediscover_months";
-    private static final String DEFAULT_REDISCOVER_MONTHS = "12";
+    // Rediscover Albums: the list of the Rediscover Releases LMS plugin (github.com/arigit/LMS-Rediscover-Your-Music)
+    public static final String SHOW_REDISCOVER_PREF_KEY = "auto_show_rediscover";
+    private static final String REDISCOVER_COMMAND = "rediscoverreleases";
     private static final String COPY_QUEUE_PREFIX = "copyqueue/"; // + ID of the player to copy the queue from
     public static final String ALBUM_CLICK_PREF_KEY = "auto_album_click";
     public static final String ALBUM_CLICK_TRACKS = "tracks";
@@ -100,11 +98,13 @@ public class LmsBrowseHelper {
     private List<GroupIndex> allArtistIndex = null;
     private List<GroupIndex> albumsAlphaIndex = null;
     private volatile AlbumTracks lastAlbumTracks = null;
-    // Rediscover / Unplayed Albums, built once a day (per library and setting), in an order fixed for the day
+    // Unplayed Albums, built once a day (per library), in an order fixed for the day
     private final Map<String, DailyList> dailyLists = new java.util.concurrent.ConcurrentHashMap<>();
     private final Object playCountsLock = new Object();
     private final Object dailyListsLock = new Object();
     private UnplayedAlbums unplayedAlbums = null;
+    // Version of the Rediscover Releases list (changes on each rebuild or cleanup) when Android Auto last loaded it
+    private volatile String rediscoverVersion = null;
 
     private static final String[] RELEASE_TYPE_ORDER = {"ALBUM", "EP", "BOXSET", "BESTOF", "COMPILATION", "SINGLE", "APPEARANCE"};
 
@@ -302,7 +302,7 @@ public class LmsBrowseHelper {
         } else if (ALBUMS_RECENTLY_PLAYED_ID.equals(parentMediaId) || parentMediaId.startsWith(ALBUMS_RECENTLY_PLAYED_ID + "/")) {
             return loadAlbums("sort:recentlyplayed", parseOffset(parentMediaId, ALBUMS_RECENTLY_PLAYED_ID));
         } else if (ALBUMS_REDISCOVER_ID.equals(parentMediaId) || parentMediaId.startsWith(ALBUMS_REDISCOVER_ID + "/")) {
-            return loadShuffledAlbums(ALBUMS_REDISCOVER_ID, parseOffset(parentMediaId, ALBUMS_REDISCOVER_ID));
+            return loadRediscoverAlbums(parseOffset(parentMediaId, ALBUMS_REDISCOVER_ID));
         } else if (ALBUMS_UNPLAYED_ID.equals(parentMediaId) || parentMediaId.startsWith(ALBUMS_UNPLAYED_ID + "/")) {
             return loadShuffledAlbums(ALBUMS_UNPLAYED_ID, parseOffset(parentMediaId, ALBUMS_UNPLAYED_ID));
         } else if (FAVORITES_ID.equals(parentMediaId)) {
@@ -393,7 +393,9 @@ public class LmsBrowseHelper {
         items.add(buildBrowsableItem(ALBUMS_NEW_ID, getLabel("BROWSE_NEW_MUSIC"), drawableUri(R.drawable.ic_new_releases)));
         items.add(buildBrowsableItem(ALBUMS_RANDOM_ID, getLabel("RANDOM_ALBUMS"), drawableUri(R.drawable.ic_dice_release)));
         items.add(buildBrowsableItem(ALBUMS_RECENTLY_PLAYED_ID, getLabel("RECENTLY_PLAYED_ALBUMS"), drawableUri(R.drawable.ic_history)));
-        items.add(buildBrowsableItem(ALBUMS_REDISCOVER_ID, getLabel("REDISCOVER_ALBUMS"), drawableUri(R.drawable.ic_rediscover)));
+        if (showRediscover() && rediscoverCount() > 0) {
+            items.add(buildBrowsableItem(ALBUMS_REDISCOVER_ID, getLabel("REDISCOVER_ALBUMS"), drawableUri(R.drawable.ic_rediscover)));
+        }
         if (showUnplayed()) {
             items.add(buildBrowsableItem(ALBUMS_UNPLAYED_ID, getLabel("UNPLAYED_ALBUMS"), drawableUri(R.drawable.ic_unplayed)));
         }
@@ -794,9 +796,8 @@ public class LmsBrowseHelper {
     }
 
     /**
-     * Rediscover Albums (all albums, played or not, without a play in the last N months, from LMS's per-track last
-     * played time) or Unplayed Albums (no plays), in random order. Built once a day, like the order: unlike Random,
-     * the list stays the same through the day (and app restarts), and its "More" pages follow that order.
+     * Unplayed Albums (no plays), in random order. Built once a day, like the order: unlike Random, the list stays
+     * the same through the day (and app restarts), and its "More" pages follow that order.
      */
     private List<MediaBrowserCompat.MediaItem> loadShuffledAlbums(String listId, int offset) {
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
@@ -834,27 +835,17 @@ public class LmsBrowseHelper {
         return items;
     }
 
-    // Today's album IDs of Rediscover or Unplayed Albums (built if needed), or null. Its own lock: built either here
-    // for the list being opened, or in the background on car connect (prefetchDailyLists), never both at once.
+    // Today's album IDs of Unplayed Albums (built if needed), or null. Its own lock: built either here for the list
+    // being opened, or in the background on car connect (prefetchDailyLists), never both at once.
     private List<String> dailyListIds(String listId) throws Exception {
         synchronized (dailyListsLock) {
             String day = String.format(Locale.US, "%tF", new Date());
-            int months = rediscoverMonths();
-            String key = listId + "|" + getLibraryId() + "|" + months + "|" + day;
+            String key = listId + "|" + getLibraryId() + "|" + day;
             DailyList list = dailyLists.get(listId);
             if (null!=list && key.equals(list.key)) {
                 return list.ids;
             }
-            List<String> source;
-            if (ALBUMS_UNPLAYED_ID.equals(listId)) {
-                source = unplayedAlbumIds();
-            } else {
-                Set<String> played = albumsPlayedSince(months);
-                source = null==played ? null : albumIds(null, BROWSE_LIMIT);
-                if (null!=source) {
-                    source.removeAll(played);
-                }
-            }
+            List<String> source = unplayedAlbumIds();
             if (null==source) return null;
             list = new DailyList(key, dailyOrder(source, day));
             dailyLists.put(listId, list);
@@ -864,28 +855,18 @@ public class LmsBrowseHelper {
     }
 
     /**
-     * Build today's Rediscover (and Unplayed) Albums in the background, e.g. on car connect: on cellular the queries
-     * take a few seconds, which would otherwise hold up the first opening of the list (and other lists behind it).
+     * Build today's Unplayed Albums in the background, e.g. on car connect: on cellular the query takes a few
+     * seconds, which would otherwise hold up the first opening of the list (and other lists behind it).
      */
     public void prefetchDailyLists() {
+        if (!showUnplayed()) return;
         new Thread(() -> {
             try {
-                dailyListIds(ALBUMS_REDISCOVER_ID);
-                if (showUnplayed()) {
-                    dailyListIds(ALBUMS_UNPLAYED_ID);
-                }
+                dailyListIds(ALBUMS_UNPLAYED_ID);
             } catch (Exception e) {
                 Utils.error("Failed to prefetch the daily album lists", e);
             }
         }, "DailyLists").start();
-    }
-
-    private int rediscoverMonths() {
-        try {
-            return Integer.parseInt(prefs.getString(REDISCOVER_MONTHS_PREF_KEY, DEFAULT_REDISCOVER_MONTHS));
-        } catch (NumberFormatException e) {
-            return Integer.parseInt(DEFAULT_REDISCOVER_MONTHS);
-        }
     }
 
     /**
@@ -905,53 +886,91 @@ public class LmsBrowseHelper {
         return z ^ (z >>> 33);
     }
 
+    private boolean showRediscover() {
+        return prefs.getBoolean(SHOW_REDISCOVER_PREF_KEY, false);
+    }
+
     /**
-     * The active library's albums with a track played in the last months, or null. LMS keeps each track's last play
-     * time (tracks_persistent.lastplayed) but has no query tag returning it, so it's used as a raw SQL condition;
-     * play data is only joined when the condition mentions playcount.
+     * Rediscover Albums: the Rediscover Releases plugin's list (the same as Material's home row), restricted to the
+     * active library. The plugin builds it on the server (albums without recent plays, every few hours) and removes
+     * albums played in full; it answers in list order with the fields of an "albums" query.
      */
-    private Set<String> albumsPlayedSince(int months) {
-        Calendar since = Calendar.getInstance();
-        since.add(Calendar.MONTH, -months);
+    private List<MediaBrowserCompat.MediaItem> loadRediscoverAlbums(int offset) {
+        List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
         try {
-            List<String> params = new ArrayList<>(Arrays.asList("titles", "0", String.valueOf(PLAY_COUNTS_TRACK_LIMIT),
-                    "search:sql=tracks_persistent.playcount > 0 AND tracks_persistent.lastplayed > " + since.getTimeInMillis() / 1000,
-                    "tags:e"));
+            List<String> params = new ArrayList<>(Arrays.asList(REDISCOVER_COMMAND, "albums", String.valueOf(offset),
+                    String.valueOf(REDISCOVER_PAGE_SIZE), "tags:ajlsy"));
             addLibraryParam(params);
-            JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), INDEX_TIMEOUT_MS);
+            JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), TIMEOUT_MS);
             JSONObject result = null==resp ? null : resp.optJSONObject("result");
-            if (null==result) return null;
-            JSONArray loop = result.optJSONArray("titles_loop");
-            Set<String> albums = new HashSet<>();
+            if (null==result) return items;
+            rediscoverVersion = result.optString("version", "");
+            JSONArray loop = result.optJSONArray("albums_loop");
             for (int i = 0; null!=loop && i < loop.length(); i++) {
-                String album = loop.getJSONObject(i).optString("album_id", "");
-                if (!album.isEmpty()) {
-                    albums.add(album);
-                }
+                items.add(buildAlbumItem(loop.getJSONObject(i)));
             }
-            Utils.debug("Played in the last " + months + " months: " + (null==loop ? 0 : loop.length()) + " tracks, " + albums.size() + " albums");
-            return albums;
+            int total = result.optInt("count", 0);
+            int nextOffset = offset + REDISCOVER_PAGE_SIZE;
+            if (nextOffset < total) {
+                items.add(buildBrowsableItem(ALBUMS_REDISCOVER_ID + "/" + nextOffset,
+                        "► " + getLabel("MORE") + " (" + nextOffset + "/" + total + ")", null));
+            }
         } catch (Exception e) {
-            Utils.error("Failed to fetch recently played albums", e);
-            return null;
+            Utils.error("Failed to load the Rediscover Releases list", e);
+        }
+        return items;
+    }
+
+    // Albums in the plugin's list for the active library; 0 if the plugin isn't installed or LMS can't be reached.
+    private int rediscoverCount() {
+        try {
+            List<String> params = new ArrayList<>(Arrays.asList(REDISCOVER_COMMAND, "albums", "0", "0"));
+            addLibraryParam(params);
+            JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), TIMEOUT_MS);
+            JSONObject result = null==resp ? null : resp.optJSONObject("result");
+            return null==result ? 0 : result.optInt("count", 0);
+        } catch (Exception e) {
+            // Without the plugin LMS answers with an empty page, which isn't JSON.
+            Utils.debug("No Rediscover Releases list: " + e.getMessage());
+            return 0;
         }
     }
 
-    // IDs of the active library's albums, in the given sort order; tags:x keeps the reply small (~120 bytes per album).
-    private List<String> albumIds(String sortParam, int count) throws Exception {
-        List<String> params = new ArrayList<>(Arrays.asList("albums", "0", String.valueOf(count), "tags:x"));
-        if (null!=sortParam) {
-            params.add(sortParam);
+    /**
+     * Whether the plugin's list changed (rebuilt, or albums played in full removed) since Android Auto last loaded
+     * it. Answers true once per change: the next load records the new version.
+     */
+    public boolean rediscoverChanged() {
+        String seen = rediscoverVersion;
+        if (!showRediscover() || null==seen) return false;
+        try {
+            JSONObject resp = rpc.sendMessageSync("", new String[]{REDISCOVER_COMMAND, "status"}, TIMEOUT_MS);
+            JSONObject result = null==resp ? null : resp.optJSONObject("result");
+            if (null==result) return false;
+            String version = result.optString("version", "");
+            if (version.equals(seen)) return false;
+            Utils.debug("Rediscover Releases list changed: version " + seen + " -> " + version);
+            rediscoverVersion = null;
+            return true;
+        } catch (Exception e) {
+            Utils.debug("Failed to check the Rediscover Releases list: " + e.getMessage());
+            return false;
         }
-        addLibraryParam(params);
-        JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), TIMEOUT_MS);
-        JSONObject result = null==resp ? null : resp.optJSONObject("result");
-        JSONArray loop = null==result ? null : result.optJSONArray("albums_loop");
-        List<String> ids = new ArrayList<>();
-        for (int i = 0; null!=loop && i < loop.length(); i++) {
-            ids.add(loop.getJSONObject(i).optString("id", ""));
+    }
+
+    /**
+     * Whether the Rediscover Releases plugin is installed on the server: TRUE / FALSE, or null if LMS can't be
+     * reached. For the settings screen's warning.
+     */
+    public static Boolean rediscoverPluginInstalled(JsonRpc rpc) {
+        try {
+            JSONObject resp = rpc.sendMessageSync("", new String[]{"can", REDISCOVER_COMMAND, "albums", "?"}, TIMEOUT_MS);
+            JSONObject result = null==resp ? null : resp.optJSONObject("result");
+            return null==result ? null : 1==result.optInt("_can", 0);
+        } catch (Exception e) {
+            Utils.debug("Failed to check for the Rediscover Releases plugin: " + e.getMessage());
+            return null;
         }
-        return ids;
     }
 
     private boolean showUnplayed() {

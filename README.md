@@ -50,7 +50,7 @@ This fork builds on the work done by upstream adding:
 <img width="480" height="723" alt="image" src="https://github.com/user-attachments/assets/c111600c-cc95-4984-84c1-a4a894eab1e2" />
 </p>
 
-- Browse your library from the car: albums (new, random, recently played, rediscover (seldom played), artists, playlists, favourites, and switch libraries and players.
+- Browse your library from the car: albums (new, random, recently played, rediscover (seldom played, needs the [Rediscover Releases](https://github.com/arigit/LMS-Rediscover-Your-Music) LMS plugin), artists, playlists, favourites, and switch libraries and players.
 
 - Advanced features
   - Copy the queue of any other player registered on LMS (to continue playback in your car) including current track position
@@ -71,6 +71,7 @@ There are three configuration points to check: each of the android apps, and the
   - When album is selected: show tracks
   - Ignore the car's play on connect: ON
   - Resume after reconnecting: ON
+  - Include Rediscover Albums list: ON (after installing the [Rediscover Releases](https://github.com/arigit/LMS-Rediscover-Your-Music) plugin on the server)
 - Default Player: (set to the player name you chose in the squeezelite app config; avoid apostrophes "'" in this name)
 - Only Control Default: ON
 

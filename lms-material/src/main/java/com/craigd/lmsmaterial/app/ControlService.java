@@ -212,6 +212,10 @@ public class ControlService extends MediaBrowserServiceCompat {
     private boolean carConnected;
     private boolean carStateConnected; // last state read from Android Auto's car connection provider
     private BroadcastReceiver carConnectionReceiver;
+    // While the car is connected: has the Rediscover Releases plugin changed its list (rebuilt, or albums played in
+    // full removed)? Then Android Auto reloads it. The plugin cleans up a few minutes after a listed album is played.
+    private static final long REDISCOVER_CHECK_MS = 10 * 60 * 1000L;
+    private final Runnable rediscoverCheck = this::checkRediscover;
     private final Runnable commandStatusRefresh = () -> {
         if (null!=cometClient && !Utils.isEmpty(MainActivity.activePlayer)) {
             cometClient.getPlayerStatus(MainActivity.activePlayer);
@@ -236,6 +240,8 @@ public class ControlService extends MediaBrowserServiceCompat {
                     sharedPreferences.edit().remove(CAR_RESUME_STATE_PREF_KEY).apply();
                 });
             }
+        } else if (LmsBrowseHelper.SHOW_REDISCOVER_PREF_KEY.equals(key)) {
+            notifyChildrenChanged(LmsBrowseHelper.RELEASES_GROUP_ID);
         } else if (LmsBrowseHelper.SHOW_UNPLAYED_PREF_KEY.equals(key)) {
             notifyChildrenChanged(LmsBrowseHelper.RELEASES_GROUP_ID);
             getBrowseHelper().prefetchPlayCounts();
@@ -1705,6 +1711,22 @@ public class ControlService extends MediaBrowserServiceCompat {
         });
     }
 
+    private void checkRediscover() {
+        handler.removeCallbacks(rediscoverCheck);
+        if (!carConnected) {
+            return;
+        }
+        handler.postDelayed(rediscoverCheck, REDISCOVER_CHECK_MS);
+        getBrowseExecutor().execute(() -> {
+            if (getBrowseHelper().rediscoverChanged()) {
+                handler.post(() -> {
+                    notifyChildrenChanged(LmsBrowseHelper.ALBUMS_REDISCOVER_ID);
+                    notifyChildrenChanged(LmsBrowseHelper.RELEASES_GROUP_ID); // an emptied list hides the entry
+                });
+            }
+        });
+    }
+
     /**
      * Android Auto connected: check the selected library, start the player app (if set to auto start), and
      * control it if it is the default player or nothing else is connected. With "Only control default", the
@@ -1723,6 +1745,8 @@ public class ControlService extends MediaBrowserServiceCompat {
         Utils.debug("Android Auto connected");
         loadCarResume();
         getBrowseHelper().prefetchDailyLists();
+        handler.removeCallbacks(rediscoverCheck);
+        handler.postDelayed(rediscoverCheck, REDISCOVER_CHECK_MS);
         // Queued before Android Auto's first loadChildren, so the root and its lists use a valid selection.
         getBrowseExecutor().execute(() -> {
             if (getBrowseHelper().ensureLibrarySelected()) {

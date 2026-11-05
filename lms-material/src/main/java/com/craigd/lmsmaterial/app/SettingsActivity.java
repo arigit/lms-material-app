@@ -343,6 +343,21 @@ public class SettingsActivity extends AppCompatActivity {
                 });
             }
 
+            final SwitchPreferenceCompat rediscoverPref = getPreferenceManager().findPreference(LmsBrowseHelper.SHOW_REDISCOVER_PREF_KEY);
+            if (rediscoverPref != null) {
+                if (rediscoverPref.isChecked()) {
+                    checkRediscoverPlugin(rediscoverPref, false);
+                }
+                rediscoverPref.setOnPreferenceChangeListener((pref, newValue) -> {
+                    if (Boolean.TRUE.equals(newValue)) {
+                        checkRediscoverPlugin(rediscoverPref, true);
+                    } else {
+                        rediscoverPref.setSummary(R.string.auto_show_rediscover_summary);
+                    }
+                    return true;
+                });
+            }
+
             Preference clearCacheButton = getPreferenceManager().findPreference(CLEAR_CACHE_PREF_KEY);
             if (clearCacheButton != null) {
                 clearCacheButton.setOnPreferenceClickListener(arg0 -> {
@@ -417,6 +432,43 @@ public class SettingsActivity extends AppCompatActivity {
                 case AutoTabOrder.COPY_QUEUE: return getString(R.string.auto_tab_copy_queue);
                 default: return tab;
             }
+        }
+
+        /**
+         * "Include Rediscover Albums list" needs the Rediscover Releases plugin on the server: if LMS says it
+         * doesn't have it, warn in the summary, and with a dialog when the setting has just been switched on.
+         */
+        private void checkRediscoverPlugin(SwitchPreferenceCompat pref, boolean justEnabled) {
+            if (null==getContext()) {
+                return;
+            }
+            JsonRpc rpc = new JsonRpc(getContext());
+            new Thread(() -> {
+                Boolean installed = LmsBrowseHelper.rediscoverPluginInstalled(rpc);
+                if (null==getActivity()) {
+                    return;
+                }
+                getActivity().runOnUiThread(() -> {
+                    if (!isAdded() || !pref.isChecked()) {
+                        return;
+                    }
+                    if (Boolean.FALSE.equals(installed)) {
+                        pref.setSummary(R.string.rediscover_plugin_missing_summary);
+                        if (justEnabled) {
+                            new AlertDialog.Builder(requireContext())
+                                    .setTitle(R.string.rediscover_plugin_missing_title)
+                                    .setMessage(getString(R.string.rediscover_plugin_missing, getString(R.string.rediscover_repo_url)))
+                                    .setPositiveButton(R.string.ok, null)
+                                    .show();
+                        }
+                    } else {
+                        pref.setSummary(R.string.auto_show_rediscover_summary);
+                        if (null==installed && justEnabled) {
+                            StyleableToast.makeText(requireContext(), getString(R.string.rediscover_plugin_unknown), Toast.LENGTH_LONG, R.style.toast).show();
+                        }
+                    }
+                });
+            }, "RediscoverCheck").start();
         }
 
         private void updateTabOrderSummary(Preference pref) {
