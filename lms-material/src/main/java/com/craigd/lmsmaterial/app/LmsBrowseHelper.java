@@ -390,11 +390,18 @@ public class LmsBrowseHelper {
     private List<MediaBrowserCompat.MediaItem> loadReleasesGroup() {
         ensureLabelsLoaded();
         List<MediaBrowserCompat.MediaItem> items = new ArrayList<>();
+        MediaBrowserCompat.MediaItem random = buildBrowsableItem(ALBUMS_RANDOM_ID, getLabel("RANDOM_ALBUMS"), drawableUri(R.drawable.ic_dice_release));
+        MediaBrowserCompat.MediaItem recent = buildBrowsableItem(ALBUMS_RECENTLY_PLAYED_ID, getLabel("RECENTLY_PLAYED_ALBUMS"), drawableUri(R.drawable.ic_history));
         items.add(buildBrowsableItem(ALBUMS_NEW_ID, getLabel("BROWSE_NEW_MUSIC"), drawableUri(R.drawable.ic_new_releases)));
-        items.add(buildBrowsableItem(ALBUMS_RANDOM_ID, getLabel("RANDOM_ALBUMS"), drawableUri(R.drawable.ic_dice_release)));
-        items.add(buildBrowsableItem(ALBUMS_RECENTLY_PLAYED_ID, getLabel("RECENTLY_PLAYED_ALBUMS"), drawableUri(R.drawable.ic_history)));
         if (showRediscover() && rediscoverCount() > 0) {
+            // With Rediscover: New, Rediscover, Recently Played, Random (user, 2026-11-05). Without: New, Random,
+            // Recently Played. Unplayed (if shown) always comes right above the A-Z list.
             items.add(buildBrowsableItem(ALBUMS_REDISCOVER_ID, getLabel("REDISCOVER_ALBUMS"), drawableUri(R.drawable.ic_rediscover)));
+            items.add(recent);
+            items.add(random);
+        } else {
+            items.add(random);
+            items.add(recent);
         }
         if (showUnplayed()) {
             items.add(buildBrowsableItem(ALBUMS_UNPLAYED_ID, getLabel("UNPLAYED_ALBUMS"), drawableUri(R.drawable.ic_unplayed)));
