@@ -25,7 +25,7 @@ public class LocalPlayer {
     public static final String SQUEEZE_PLAYER_PKG = "de.bluegaspode.squeezeplayer";
     public static final String SQUEEZELITE_PKG = "org.lyrion.squeezelite";
     public static final String SQUEEZELITE_AR_PKG = "org.lyrion.squeezelite.ar";
-    private static final String SQUEEZELITE_SERVICE_CLASS = "org.lyrion.squeezelite.PlayerService";
+    private static final String SQUEEZELITE_CLASS_PREFIX = "org.lyrion.squeezelite.";
     private final SharedPreferences sharedPreferences;
     private final Context context;
     private JsonRpc rpc = null;
@@ -172,15 +172,18 @@ public class LocalPlayer {
         }
         try {
             Intent intent = new Intent();
-            intent.setClassName(pkg, SQUEEZELITE_SERVICE_CLASS);
             if (start) {
+                intent.setClassName(pkg, SQUEEZELITE_CLASS_PREFIX+"PlayerService");
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent);
                 } else {
                     context.startService(intent);
                 }
             } else {
-                context.stopService(intent);
+                // Squeezelite (ar) keeps Squeezelite's class and action names, only its package differs
+                intent.setClassName(pkg, SQUEEZELITE_CLASS_PREFIX+"CommandReceiver");
+                intent.setAction(SQUEEZELITE_CLASS_PREFIX+"STOP");
+                context.sendBroadcast(intent);
             }
             return true;
         } catch (Exception e) {
