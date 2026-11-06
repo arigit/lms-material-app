@@ -100,9 +100,8 @@ public class LmsBrowseHelper {
     private volatile AlbumTracks lastAlbumTracks = null;
     // Unplayed Albums, built once a day (per library), in an order fixed for the day
     private final Map<String, DailyList> dailyLists = new java.util.concurrent.ConcurrentHashMap<>();
-    private final Object playCountsLock = new Object();
     private final Object dailyListsLock = new Object();
-    private UnplayedAlbums unplayedAlbums = null;
+    private final UnplayedAlbumsCache unplayedAlbums = new UnplayedAlbumsCache(PLAY_COUNTS_MAX_AGE_MS);
     // Version of the Rediscover Releases list (changes on each rebuild or cleanup) when Android Auto last loaded it
     private volatile String rediscoverVersion = null;
 
@@ -115,18 +114,6 @@ public class LmsBrowseHelper {
         AlbumTracks(String albumId, List<String> trackIds) {
             this.albumId = albumId;
             this.trackIds = trackIds;
-        }
-    }
-
-    private static class UnplayedAlbums {
-        final String libraryId;
-        final long time;
-        final List<String> ids;
-
-        UnplayedAlbums(String libraryId, long time, List<String> ids) {
-            this.libraryId = libraryId;
-            this.time = time;
-            this.ids = ids;
         }
     }
 
@@ -157,9 +144,7 @@ public class LmsBrowseHelper {
         albumsAlphaIndex = null;
         lastAlbumTracks = null;
         dailyLists.clear();
-        synchronized (playCountsLock) {
-            unplayedAlbums = null;
-        }
+        unplayedAlbums.clear(); // never waits for a running fetch: this runs on the main thread
     }
 
     private boolean shouldGroupByReleaseType() {
@@ -852,10 +837,13 @@ public class LmsBrowseHelper {
             if (null!=list && key.equals(list.key)) {
                 return list.ids;
             }
+            int generation = unplayedAlbums.generation();
             List<String> source = unplayedAlbumIds();
             if (null==source) return null;
             list = new DailyList(key, dailyOrder(source, day));
-            dailyLists.put(listId, list);
+            if (generation==unplayedAlbums.generation()) { // not reset() while fetching
+                dailyLists.put(listId, list);
+            }
             Utils.debug(listId + ": " + list.ids.size() + " albums");
             return list.ids;
         }
@@ -992,25 +980,26 @@ public class LmsBrowseHelper {
     }
 
     // The active library's albums without plays, fetched at most once a day (or when the library changes), or null.
-    // Has its own lock, not the browse executor: a slow fetch only holds up the list that needs it.
+    // Its own cache and lock, not the browse executor: a slow fetch only holds up the list that needs it.
     private List<String> unplayedAlbumIds() {
-        synchronized (playCountsLock) {
-            String lib = getLibraryId();
-            long now = SystemClock.elapsedRealtime();
-            if (null!=unplayedAlbums && Objects.equals(lib, unplayedAlbums.libraryId) && now - unplayedAlbums.time < PLAY_COUNTS_MAX_AGE_MS) {
-                return unplayedAlbums.ids;
-            }
-            try {
-                Map<String, Integer> plays = playCountsByAlbum();
-                if (null!=plays) {
+        try {
+            return unplayedAlbums.get(getLibraryId(), SystemClock.elapsedRealtime(), () -> {
+                try {
+                    Map<String, Integer> plays = playCountsByAlbum();
+                    if (null==plays) {
+                        return null;
+                    }
                     List<String> ids = unplayed(plays);
                     Utils.debug("Play counts: " + plays.size() + " albums, " + ids.size() + " unplayed");
-                    unplayedAlbums = new UnplayedAlbums(lib, now, ids);
+                    return ids;
+                } catch (Exception e) {
+                    Utils.error("Failed to fetch play counts", e); // the last IDs (if any) are used
+                    return null;
                 }
-            } catch (Exception e) {
-                Utils.error("Failed to fetch play counts", e);
-            }
-            return null==unplayedAlbums ? null : unplayedAlbums.ids;
+            });
+        } catch (Exception e) {
+            Utils.error("Failed to fetch play counts", e);
+            return null;
         }
     }
 
