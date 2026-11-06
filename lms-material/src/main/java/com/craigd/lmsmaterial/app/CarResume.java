@@ -59,6 +59,32 @@ public class CarResume {
      * seen playing (ms, negative if not seen). Only then is the state saved: a stopped player (the queue played to
      * its end, Stop, or Power off) or one paused for a while isn't resumed.
      */
+    /**
+     * How long ago (ms) a player that LMS now has paused last played, when the last status seen still said playing.
+     * The status push for the pause can be missed (CometD went quiet after a network change, car 2026-11-05: paused
+     * 49 s before the disconnect, but last seen playing 198 s before), and the time since that status then overstates
+     * it. Worked out from how far it played on since that status: on the same track the position difference, on the
+     * next one the rest of the last-seen track plus the position. Otherwise (a jump, a seek back) sinceStatus.
+     *
+     * @param sinceStatus ms since the last status (playing) was received
+     * @param lastIndex, lastTime, lastDuration that status' queue index, position and track duration (ms)
+     * @param index, time LMS's queue index and position now (ms)
+     */
+    public static long sincePlayedOn(long sinceStatus, int lastIndex, long lastTime, long lastDuration, int index, long time) {
+        long playedOn;
+        if (index == lastIndex) {
+            playedOn = time - lastTime;
+        } else if (index == lastIndex + 1 && lastDuration > 0 && lastTime <= lastDuration) {
+            playedOn = lastDuration - lastTime + time;
+        } else {
+            return sinceStatus;
+        }
+        if (playedOn < 0 || playedOn > sinceStatus) {
+            return sinceStatus;
+        }
+        return sinceStatus - playedOn;
+    }
+
     public static boolean wasPlaying(String mode, long sincePlaying) {
         if ("play".equals(mode)) {
             return true;

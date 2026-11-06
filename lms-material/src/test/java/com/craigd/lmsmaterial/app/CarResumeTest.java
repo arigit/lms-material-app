@@ -60,4 +60,28 @@ public class CarResumeTest {
         assertFalse(CarResume.wasPlaying("pause", -1)); // not seen playing
         assertFalse(CarResume.wasPlaying(null, 0));
     }
+
+    @Test
+    public void sincePlayedOnSameTrack() {
+        // Car 2026-11-05: last status 198 s before the disconnect at 0:01, paused by the car at 2:30, 49 s before
+        long since = CarResume.sincePlayedOn(198000, 3, 1000, 300000, 3, 150000);
+        assertEquals(49000, since);
+        assertTrue(CarResume.wasPlaying("pause", since));
+        assertFalse(CarResume.wasPlaying("pause", 198000));
+    }
+
+    @Test
+    public void sincePlayedOnNextTrack() {
+        // 60 s left of track 3 at the last status, then 100 s into track 4: paused 40 s ago
+        assertEquals(40000, CarResume.sincePlayedOn(200000, 3, 240000, 300000, 4, 100000));
+    }
+
+    @Test
+    public void sincePlayedOnUnknown() {
+        // A jump, a seek back, or more played than time went by: keep the time since the status
+        assertEquals(200000, CarResume.sincePlayedOn(200000, 3, 1000, 300000, 7, 50000));
+        assertEquals(200000, CarResume.sincePlayedOn(200000, 3, 100000, 300000, 3, 50000));
+        assertEquals(200000, CarResume.sincePlayedOn(200000, 3, 0, 300000, 3, 250000));
+        assertEquals(200000, CarResume.sincePlayedOn(200000, 3, 1000, 0, 4, 50000));
+    }
 }
