@@ -1421,7 +1421,8 @@ public class LmsBrowseHelper {
      * Copy another player's queue, current track and position to the active player and play it there. Done track
      * by track rather than with the Material skin's queue transfer, whose sync/unsync leaves cue sheet tracks as
      * metadata-less "tmp://" copies; such entries in the source queue are mapped back to library tracks. Entries
-     * that aren't library tracks (e.g. radio) are copied by URL.
+     * that aren't library tracks (e.g. radio) are copied by URL. Order and repeated tracks are kept, and if the
+     * copy fails the active player's old queue is put back (see QueueCopy).
      */
     private boolean copyQueue(String fromId) {
         String toId = MainActivity.activePlayer;
@@ -1431,35 +1432,20 @@ public class LmsBrowseHelper {
         try {
             JSONObject status = rpc.sendMessageSync(fromId, new String[]{"status", "0", String.valueOf(BROWSE_LIMIT), "tags:u"}, TIMEOUT_MS);
             status = null==status ? null : status.optJSONObject("result");
-            JSONArray loop = null==status ? null : status.optJSONArray("playlist_loop");
-            if (null==loop || loop.length() == 0) return false;
-            int index = status.optInt("playlist_cur_index", 0);
+            QueueCopy.Snapshot source = queueSnapshot(status);
+            if (null==source || source.entries.isEmpty()) return false;
             double time = status.optDouble("time", 0);
-            // Each entry: a library track ID, or a URL
-            List<String> trackIds = new ArrayList<>();
-            List<String> urls = new ArrayList<>();
-            boolean allTracks = true;
-            for (int i = 0; i < loop.length(); i++) {
-                JSONObject entry = loop.getJSONObject(i);
-                JSONObject info = libraryTrackInfo(entry);
-                trackIds.add(null==info ? null : String.valueOf(info.optLong("id")));
-                urls.add(entry.optString("url", ""));
-                allTracks &= null!=info;
+            JSONObject old = rpc.sendMessageSync(toId, new String[]{"status", "0", String.valueOf(BROWSE_LIMIT), "tags:u"}, TIMEOUT_MS);
+            QueueCopy.Snapshot oldQueue = queueSnapshot(null==old ? null : old.optJSONObject("result"));
+            if (null==oldQueue) {
+                Utils.debug("Copy queue: can't read the queue of " + toId + ", not copying");
+                return false;
             }
-            Utils.debug("Copying the queue of " + fromId + " to " + toId + ": " + loop.length() + " entries" +
-                    (allTracks ? "" : ", not all library tracks") + ", at " + index + "/" + time);
-            if (allTracks) {
-                // Waited for, so the seek below comes after the load. No library filter: copy exactly that queue.
-                rpc.sendMessageSync(toId, new String[]{"playlistcontrol", "cmd:load", "track_id:" + String.join(",", trackIds),
-                        "play_index:" + index, "library_id:" + ALL_LIBRARIES_ID}, TIMEOUT_MS);
-            } else {
-                rpc.sendMessageSync(toId, new String[]{"playlist", "clear"}, TIMEOUT_MS);
-                for (int i = 0; i < trackIds.size(); i++) {
-                    rpc.sendMessageSync(toId, null!=trackIds.get(i)
-                            ? new String[]{"playlistcontrol", "cmd:add", "track_id:" + trackIds.get(i), "library_id:" + ALL_LIBRARIES_ID}
-                            : new String[]{"playlist", "add", urls.get(i)}, TIMEOUT_MS);
-                }
-                rpc.sendMessageSync(toId, new String[]{"playlist", "index", String.valueOf(index)}, TIMEOUT_MS);
+            Utils.debug("Copying the queue of " + fromId + " to " + toId + ": " + source.entries.size() + " entries, at " +
+                    source.index + "/" + time + ", replacing " + oldQueue.entries.size());
+            // No library filter: copy exactly that queue.
+            if (!QueueCopy.copy(this::lmsResult, toId, source, oldQueue, ALL_LIBRARIES_ID)) {
+                return false;
             }
             if (time > 1) {
                 // Seek once the track has started, or LMS ignores it.
@@ -1471,6 +1457,29 @@ public class LmsBrowseHelper {
             Utils.error("Failed to copy the queue of " + fromId, e);
             return false;
         }
+    }
+
+    // A queue from a "status 0 N tags:u" result, cue sheet "tmp://" entries mapped back to library tracks; null if
+    // there is no result.
+    private QueueCopy.Snapshot queueSnapshot(JSONObject status) throws Exception {
+        if (null==status) return null;
+        JSONArray loop = status.optJSONArray("playlist_loop");
+        List<QueueCopy.Entry> entries = new ArrayList<>();
+        for (int i = 0; null!=loop && i < loop.length(); i++) {
+            JSONObject entry = loop.getJSONObject(i);
+            JSONObject info = libraryTrackInfo(entry);
+            entries.add(new QueueCopy.Entry(null==info ? null : String.valueOf(info.optLong("id")), entry.optString("url", "")));
+        }
+        return new QueueCopy.Snapshot(entries, status.optInt("playlist_cur_index", 0));
+    }
+
+    // The "result" of an LMS command; throws if LMS can't be reached or doesn't answer.
+    private JSONObject lmsResult(String playerId, String... command) throws Exception {
+        JSONObject response = rpc.sendMessageSync(playerId, command, TIMEOUT_MS);
+        if (null==response) {
+            throw new Exception("No response to " + command[0] + " " + (command.length > 1 ? command[1] : ""));
+        }
+        return response.optJSONObject("result");
     }
 
     private List<MediaBrowserCompat.MediaItem> loadLibraries() {
