@@ -16,7 +16,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.ParcelFileDescriptor;
+import android.os.Process;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -34,31 +36,83 @@ import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.regex.Pattern;
 
 /**
  * Android Auto only loads browse artwork from content:// (or android.resource://) URIs, so
- * remote images are exposed via this provider, which downloads and caches them on first use.
+ * LMS images are exposed via this provider, which downloads and caches them on first use.
  *
- * URIs are content://AUTHORITY/img/ENCODED_URL, where ENCODED_URL is the http(s) image URL.
+ * URIs are content://AUTHORITY/lms/ENCODED_PATH, where ENCODED_PATH is an image path on the configured
+ * LMS server (e.g. music/<id>/cover_300x300_f). The provider is exported, so that Android Auto can read it,
+ * and it sends the stored LMS credentials. So it only fetches from the configured server, only paths that
+ * are images (no query string, so no LMS commands), and only for Android Auto or this app. External images
+ * go through LMS's imageproxy, as in the web UI.
  */
 public class ArtworkProvider extends ContentProvider {
-    private static final String PATH = "img";
+    private static final String PATH = "lms";
     private static final String CACHE_DIR = "artwork";
     private static final int TIMEOUT_MS = 10000;
     private static final long MAX_IMAGE_BYTES = 5 * 1024 * 1024;
     private static final long MAX_CACHE_BYTES = 50 * 1024 * 1024;
+    private static final int MAX_REDIRECTS = 3;
+    private static final String ANDROID_AUTO_PKG = "com.google.android.projection.gearhead";
+
+    // Image paths on the LMS server: covers, imageproxy (external images, fetched and resized by LMS), and
+    // the static icons of the web UI and plugins (optionally resized by LMS, e.g. icon_300x300_f.png).
+    private static final Pattern ALLOWED_PATH = Pattern.compile(
+            "music/[A-Za-z0-9_-]+/cover(_[A-Za-z0-9]+)*(\\.(jpg|jpeg|png|gif|webp))?" +
+            "|imageproxy(/[A-Za-z0-9%._~!'()*-]+)+/image(_[A-Za-z0-9]+)*(\\.(jpg|jpeg|png|gif|webp))?" +
+            "|(html|material/html|plugins/[A-Za-z0-9_.-]+/html)(/[A-Za-z0-9_.-]+)+\\.(jpg|jpeg|png|gif|svg|webp)");
+
+    private static final Pattern IMAGEPROXY_UNSIZED = Pattern.compile("/image(\\.[A-Za-z]+)?$");
 
     public static String authority(Context context) {
         return context.getPackageName() + ".artwork";
     }
 
-    public static Uri wrap(Context context, String url) {
+    // path: an image path on the LMS server, with or without a leading '/'.
+    public static Uri wrap(Context context, String path) {
         return new Uri.Builder()
                 .scheme("content")
                 .authority(authority(context))
                 .appendPath(PATH)
-                .appendPath(url)
+                .appendPath(path.startsWith("/") ? path.substring(1) : path)
                 .build();
+    }
+
+    // Turns an image reference from LMS (a server path, an imageproxy path, or an http(s) URL) into a path
+    // on the LMS server for wrap(), or null. External URLs go through LMS's imageproxy; size is the LMS
+    // resize suffix for them (e.g. _300x300_f).
+    public static String lmsPath(String image, String serverUrl, String size) {
+        if (null==image || image.isEmpty()) {
+            return null;
+        }
+        if (image.startsWith("http://") || image.startsWith("https://")) {
+            if (null!=serverUrl && image.startsWith(serverUrl + "/")) {
+                image = image.substring(serverUrl.length());
+            } else {
+                return "imageproxy/" + Utils.encodeURIComponent(image) + "/image" + size;
+            }
+        }
+        String path = image.startsWith("/") ? image.substring(1) : image;
+        // Without a size LMS's imageproxy redirects to the external image, which isn't fetched (not the server)
+        if (path.startsWith("imageproxy/")) {
+            path = IMAGEPROXY_UNSIZED.matcher(path).replaceFirst("/image" + size);
+        }
+        return path;
+    }
+
+    static boolean isAllowedPath(String path) {
+        return null!=path && !path.contains("..") && ALLOWED_PATH.matcher(path).matches();
+    }
+
+    static boolean isSameServer(URL server, URL url) {
+        return server.getProtocol().equals(url.getProtocol()) && server.getHost().equalsIgnoreCase(url.getHost()) &&
+                (server.getPort()<0 ? server.getDefaultPort() : server.getPort()) == (url.getPort()<0 ? url.getDefaultPort() : url.getPort());
+    }
+
+    static boolean isAllowedCaller(String callingPackage, String ownPackage) {
+        return null!=callingPackage && (callingPackage.equals(ownPackage) || callingPackage.equals(ANDROID_AUTO_PKG));
     }
 
     @Override
@@ -73,23 +127,35 @@ public class ArtworkProvider extends ContentProvider {
         if (null==context || uri.getPathSegments().size()!=2 || !PATH.equals(uri.getPathSegments().get(0))) {
             throw new FileNotFoundException(uri.toString());
         }
-        String url = uri.getPathSegments().get(1);
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        String caller = Binder.getCallingUid()==Process.myUid() ? context.getPackageName() : getCallingPackage();
+        if (!isAllowedCaller(caller, context.getPackageName())) {
+            Utils.debug("Artwork request from " + caller + " refused");
+            throw new SecurityException("Artwork is only available to Android Auto");
+        }
+        String path = uri.getPathSegments().get(1);
+        if (!isAllowedPath(path)) {
+            Utils.debug("Artwork path refused: " + path);
             throw new FileNotFoundException(uri.toString());
         }
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+        ServerDiscovery.Server server = new ServerDiscovery.Server(prefs.getString(SettingsActivity.SERVER_PREF_KEY, null));
+        if (null==server.ip) {
+            throw new FileNotFoundException(uri.toString());
+        }
+        String url = "http://" + server.ip + ":" + server.port + "/" + path;
         File dir = new File(context.getCacheDir(), CACHE_DIR);
         File file = new File(dir, hash(url));
         if (!file.exists()) {
             if (!dir.exists() && !dir.mkdirs()) {
                 throw new FileNotFoundException("Failed to create artwork cache");
             }
-            download(context, url, file);
+            download(prefs, url, file);
             prune(dir);
         }
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
 
-    private static void download(Context context, String url, File file) throws FileNotFoundException {
+    private static void download(SharedPreferences prefs, String url, File file) throws FileNotFoundException {
         File tmp;
         try {
             tmp = File.createTempFile(file.getName(), ".tmp", file.getParentFile());
@@ -98,19 +164,33 @@ public class ArtworkProvider extends ContentProvider {
         }
         HttpURLConnection connection = null;
         try {
-            URL imageUrl = new URL(url);
-            connection = (HttpURLConnection) imageUrl.openConnection();
-            connection.setConnectTimeout(TIMEOUT_MS);
-            connection.setReadTimeout(TIMEOUT_MS);
-            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-            ServerDiscovery.Server server = new ServerDiscovery.Server(prefs.getString(SettingsActivity.SERVER_PREF_KEY, null));
-            int port = imageUrl.getPort()<0 ? imageUrl.getDefaultPort() : imageUrl.getPort();
-            if (null!=server.ip && server.ip.equalsIgnoreCase(imageUrl.getHost()) && server.port==port) {
-                String user = prefs.getString(LMS_USERNAME_KEY, "");
-                String pass = prefs.getString(LMS_PASSWORD_KEY, "");
+            // Only ever the configured LMS server (see openFile), so its credentials can be sent. LMS redirects
+            // some images (e.g. artist images to imageproxy/mai/_artist/... or contributor/...): follow those
+            // only while they stay on the same server.
+            URL server = new URL(url);
+            URL imageUrl = server;
+            String user = prefs.getString(LMS_USERNAME_KEY, "");
+            String pass = prefs.getString(LMS_PASSWORD_KEY, "");
+            for (int redirects = 0; ; redirects++) {
+                connection = (HttpURLConnection) imageUrl.openConnection();
+                connection.setConnectTimeout(TIMEOUT_MS);
+                connection.setReadTimeout(TIMEOUT_MS);
+                connection.setInstanceFollowRedirects(false);
                 if (!user.isEmpty() && !pass.isEmpty()) {
                     connection.setRequestProperty("Authorization", "Basic " + B64Code.encode(user + ":" + pass));
                 }
+                int code = connection.getResponseCode();
+                if (code<300 || code>=400) {
+                    break;
+                }
+                String location = connection.getHeaderField("Location");
+                connection.disconnect();
+                connection = null;
+                URL next = null==location ? null : new URL(imageUrl, location);
+                if (null==next || redirects>=MAX_REDIRECTS || !isSameServer(server, next)) {
+                    throw new FileNotFoundException("Artwork redirect refused: " + location);
+                }
+                imageUrl = next;
             }
             String type = connection.getContentType();
             if (connection.getResponseCode()!=HttpURLConnection.HTTP_OK || (null!=type && !type.startsWith("image/"))) {

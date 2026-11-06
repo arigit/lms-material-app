@@ -721,7 +721,6 @@ public class ControlService extends MediaBrowserServiceCompat {
                 }
                 JSONArray loop = null==result ? null : result.optJSONArray("playlist_loop");
                 if (null!=loop) {
-                    String serverUrl = rpc.getServerUrl();
                     items = new ArrayList<>();
                     for (int i = 0; i < loop.length(); i++) {
                         JSONObject track = loop.getJSONObject(i);
@@ -736,9 +735,9 @@ public class ControlService extends MediaBrowserServiceCompat {
                                 .setTitle(title)
                                 .setSubtitle(track.optString("artist", ""));
                         String coverId = track.optString("coverid", "");
-                        if (!coverId.isEmpty() && null!=serverUrl) {
+                        if (!coverId.isEmpty()) {
                             desc.setIconUri(ArtworkProvider.wrap(getApplicationContext(),
-                                    serverUrl + "/music/" + coverId + "/cover_300x300_f"));
+                                    "music/" + coverId + "/cover_300x300_f"));
                         }
                         items.add(new MediaSessionCompat.QueueItem(desc.build(), index));
                     }
