@@ -1653,6 +1653,15 @@ public class ControlService extends MediaBrowserServiceCompat {
             JSONObject track = null==loop ? null : loop.optJSONObject(0);
             if (null!=result) {
                 String mode = result.optString("mode");
+                if ("pause".equals(mode) && null!=status && playerId.equals(status.id) && status.isPlaying) {
+                    // The pause was never pushed to us: when did it stop, from how far it played on?
+                    long estimate = CarResume.sincePlayedOn(SystemClock.elapsedRealtime() - status.timestamp,
+                            status.playlistIndex, status.time, status.duration,
+                            result.optInt("playlist_cur_index", -1), (long) (result.optDouble("time", 0) * 1000.0));
+                    Utils.debug("Pause not seen, last played " + (estimate / 1000) + " s ago (" +
+                            (sincePlaying < 0 ? "-" : (sincePlaying / 1000) + " s") + " since the last status)");
+                    sincePlaying = estimate;
+                }
                 if (!CarResume.wasPlaying(mode, sincePlaying)) {
                     Utils.debug("Not playing (" + mode + ", last played " + (sincePlaying < 0 ? "-" : (sincePlaying / 1000) + " s") + " ago)");
                     return null;
