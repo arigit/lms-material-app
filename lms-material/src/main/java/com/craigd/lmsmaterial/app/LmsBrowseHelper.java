@@ -84,7 +84,7 @@ public class LmsBrowseHelper {
     private static final int REDISCOVER_PAGE_SIZE = 100;
     // Unplayed Albums needs play counts, from one query over all tracks (~4MB for 55k tracks), so they are cached.
     private static final long PLAY_COUNTS_MAX_AGE_MS = 24 * 60 * 60 * 1000L;
-    private static final int PLAY_COUNTS_TRACK_LIMIT = 200000;
+    private static final int PLAY_COUNTS_PAGE = 20000;
 
     private static final String LABEL_TOKENS = "BROWSE_BY_ARTIST,BROWSE_BY_ALBUMARTIST,BROWSE_BY_ALL_ARTISTS,BROWSE_BY_ALBUM,BROWSE_NEW_MUSIC,FAVORITES,SAVED_PLAYLISTS,PLAYERS,PLUGIN_MATERIAL_SKIN_NEW_ARTISTS,PLUGIN_MATERIAL_SKIN_RANDOM_MIX,ARTISTS,ALBUMS,SONGS,LIBRARY,MORE,YEAR";
 
@@ -1001,27 +1001,10 @@ public class LmsBrowseHelper {
                 return unplayedAlbums.ids;
             }
             try {
-                List<String> params = new ArrayList<>(Arrays.asList("titles", "0", String.valueOf(PLAY_COUNTS_TRACK_LIMIT), "tags:Oe"));
-                addLibraryParam(params);
-                JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), INDEX_TIMEOUT_MS);
-                JSONObject result = null==resp ? null : resp.optJSONObject("result");
-                JSONArray loop = null==result ? null : result.optJSONArray("titles_loop");
-                if (null!=loop) {
-                    Map<String, Integer> plays = new LinkedHashMap<>();
-                    for (int i = 0; i < loop.length(); i++) {
-                        JSONObject track = loop.getJSONObject(i);
-                        String album = track.optString("album_id", "");
-                        if (!album.isEmpty()) {
-                            plays.merge(album, track.optInt("playcount", 0), Integer::sum);
-                        }
-                    }
-                    List<String> ids = new ArrayList<>();
-                    for (Map.Entry<String, Integer> e : plays.entrySet()) {
-                        if (0==e.getValue()) {
-                            ids.add(e.getKey());
-                        }
-                    }
-                    Utils.debug("Play counts: " + loop.length() + " tracks, " + plays.size() + " albums, " + ids.size() + " unplayed");
+                Map<String, Integer> plays = playCountsByAlbum();
+                if (null!=plays) {
+                    List<String> ids = unplayed(plays);
+                    Utils.debug("Play counts: " + plays.size() + " albums, " + ids.size() + " unplayed");
                     unplayedAlbums = new UnplayedAlbums(lib, now, ids);
                 }
             } catch (Exception e) {
@@ -1029,6 +1012,74 @@ public class LmsBrowseHelper {
             }
             return null==unplayedAlbums ? null : unplayedAlbums.ids;
         }
+    }
+
+    interface TrackPages {
+        /** The result of a "titles start count" query, or null. */
+        JSONObject page(int start, int count) throws Exception;
+    }
+
+    // The play counts of the active library's albums (sum over their tracks); null if not every track could be read.
+    private Map<String, Integer> playCountsByAlbum() throws Exception {
+        return playCountsByAlbum((start, count) -> {
+            // Sorted by ID, so that the pages follow on from each other
+            List<String> params = new ArrayList<>(Arrays.asList("titles", String.valueOf(start), String.valueOf(count),
+                    "tags:Oe", "sort:sql=tracks.id"));
+            addLibraryParam(params);
+            JSONObject resp = rpc.sendMessageSync("", params.toArray(new String[0]), INDEX_TIMEOUT_MS);
+            return null==resp ? null : resp.optJSONObject("result");
+        }, PLAY_COUNTS_PAGE);
+    }
+
+    // Read in pages of tracks; null if not every track could be read: an album must not be classified from only
+    // some of its tracks.
+    static Map<String, Integer> playCountsByAlbum(TrackPages pages, int pageSize) throws Exception {
+        Map<String, Integer> plays = new LinkedHashMap<>();
+        int total = -1;
+        int read = 0;
+        do {
+            JSONObject result = pages.page(read, pageSize);
+            if (null==result) {
+                Utils.debug("Play counts: no answer after " + read + " tracks");
+                return null;
+            }
+            int count = result.optInt("count", 0);
+            if (total>=0 && count!=total) {
+                Utils.debug("Play counts: the library changed while reading (" + total + " -> " + count + " tracks)");
+                return null;
+            }
+            total = count;
+            JSONArray loop = result.optJSONArray("titles_loop");
+            int got = null==loop ? 0 : loop.length();
+            if (0==got && read<total) {
+                Utils.debug("Play counts: only " + read + " of " + total + " tracks");
+                return null;
+            }
+            addPlayCounts(plays, loop);
+            read += got;
+        } while (read<total);
+        Utils.debug("Play counts: " + read + " tracks");
+        return plays;
+    }
+
+    static void addPlayCounts(Map<String, Integer> plays, JSONArray tracks) {
+        for (int i = 0; null!=tracks && i < tracks.length(); i++) {
+            JSONObject track = tracks.optJSONObject(i);
+            String album = null==track ? "" : track.optString("album_id", "");
+            if (!album.isEmpty()) {
+                plays.merge(album, track.optInt("playcount", 0), Integer::sum);
+            }
+        }
+    }
+
+    static List<String> unplayed(Map<String, Integer> plays) {
+        List<String> ids = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : plays.entrySet()) {
+            if (0==e.getValue()) {
+                ids.add(e.getKey());
+            }
+        }
+        return ids;
     }
 
     private List<MediaBrowserCompat.MediaItem> loadArtistAlbums(String artistId) {
