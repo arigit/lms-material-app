@@ -1326,11 +1326,12 @@ public class ControlService extends MediaBrowserServiceCompat {
         return true;
     }
 
-    // Whether the player runs on this phone: by its IP, or if it is the default player and a player app is set.
+    // Whether the player runs on this phone: by its IP, or by the ID last seen at this phone's IP if a player app
+    // is set.
     private boolean isLocalPlayer(List<PlayerAvailability.Player> players, String playerId) {
         return PlayerAvailability.isLocalPlayer(PlayerAvailability.findPlayer(players, playerId), playerId,
-                MainActivity.activePlayerName, MainActivity.getLocalIpAddresses(),
-                prefs.getString(SettingsActivity.DEFAULT_PLAYER_PREF_KEY, null), hasPlayerApp());
+                MainActivity.getLocalIpAddresses(), prefs.getString(PlayerAvailability.LOCAL_PLAYER_ID_KEY, null),
+                hasPlayerApp());
     }
 
     private boolean hasPlayerApp() {
@@ -1392,7 +1393,9 @@ public class ControlService extends MediaBrowserServiceCompat {
             JSONObject response = rpc.sendMessageSync("", new String[]{"players", "0", "100"}, 3000);
             JSONObject result = null==response ? null : response.optJSONObject("result");
             if (null!=result) {
-                return PlayerAvailability.parse(result.optJSONArray("players_loop"));
+                List<PlayerAvailability.Player> players = PlayerAvailability.parse(result.optJSONArray("players_loop"));
+                PlayerAvailability.rememberLocalPlayer(prefs, players, MainActivity.getLocalIpAddresses());
+                return players;
             }
         } catch (Exception e) {
             Utils.debug("Failed to check players: " + e.getMessage());
@@ -1502,7 +1505,8 @@ public class ControlService extends MediaBrowserServiceCompat {
         defaultPlayer = null==defaultPlayer || defaultPlayer.trim().isEmpty() ? null : defaultPlayer.trim();
         PlayerAvailability.Player active = PlayerAvailability.findConnectedPlayer(players, MainActivity.activePlayer);
         PlayerAvailability.Player local = autoPlayerStarted
-                ? PlayerAvailability.findConnectedLocalPlayer(players, MainActivity.getLocalIpAddresses(), defaultPlayer, hasPlayerApp())
+                ? PlayerAvailability.findConnectedLocalPlayer(players, MainActivity.getLocalIpAddresses(),
+                        prefs.getString(PlayerAvailability.LOCAL_PLAYER_ID_KEY, null), hasPlayerApp())
                 : null;
         boolean activeIsDefault = null!=active && null!=defaultPlayer && PlayerAvailability.isAllowed(defaultPlayer, active.id, active.name);
 

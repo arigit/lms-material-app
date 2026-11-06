@@ -795,7 +795,11 @@ public class MainActivity extends AppCompatActivity {
             sharedPreferences.edit().putString(CURRENT_PLAYER_ID_KEY, playerId).apply();
         }
 
-        interceptVolume = !sharedPreferences.getBoolean(SettingsActivity.HARDWARE_VOLUME_PREF_KEY, true) || !isLocalPlayer(ip);
+        boolean local = isLocalPlayer(ip);
+        if (local) {
+            PlayerAvailability.rememberLocalPlayer(sharedPreferences, playerId);
+        }
+        interceptVolume = !sharedPreferences.getBoolean(SettingsActivity.HARDWARE_VOLUME_PREF_KEY, true) || !local;
         Utils.debug("interceptVolume:"+interceptVolume);
         sendMessageToService(ControlService.ACTIVE_PLAYER, new String[]{activePlayer, activePlayerName});
     }
