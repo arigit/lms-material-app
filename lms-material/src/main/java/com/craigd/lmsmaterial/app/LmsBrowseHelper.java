@@ -1194,7 +1194,8 @@ public class LmsBrowseHelper {
 
     private MediaBrowserCompat.MediaItem buildFavoriteMediaItem(JSONObject item) {
         String id = item.optString("id", "");
-        String name = item.optString("name", "");
+        // Items inside some favorites (e.g. podcast episodes) have a title rather than a name
+        String name = item.optString("name", item.optString("title", ""));
         String image = item.optString("image", item.optString("icon", item.optString("icon-id", "")));
         boolean hasItems = item.optInt("hasitems", 0) > 0;
         String url = item.optString("url", "");
