@@ -1417,32 +1417,15 @@ public class LmsBrowseHelper {
         return artworkId.isEmpty() ? null : resolveImageUri("/music/" + artworkId + "/cover");
     }
 
-    // Android Auto only loads artwork from content:// URIs, so remote images go via ArtworkProvider.
-    private Uri resolveImageUri(String path) {
-        if (null==path || path.isEmpty()) return null;
-        if (path.startsWith("http://") || path.startsWith("https://")) {
-            return ArtworkProvider.wrap(context, path);
-        }
-        String serverUrl = rpc.getServerUrl();
-        if (null==serverUrl) return null;
-        if (!path.startsWith("/")) {
-            path = "/" + path;
-        }
-        if (path.startsWith("/imageproxy/")) {
-            String encoded = path.substring("/imageproxy/".length());
-            int imgSuffix = encoded.lastIndexOf("/image");
-            if (imgSuffix > 0) {
-                encoded = encoded.substring(0, imgSuffix);
-            }
-            String decoded = Uri.decode(encoded);
-            if (decoded.startsWith("http://") || decoded.startsWith("https://")) {
-                return ArtworkProvider.wrap(context, decoded);
-            }
-        }
-        if (path.matches("/music/[^/]+/cover")) {
+    // Android Auto only loads artwork from content:// URIs, so images go via ArtworkProvider, which only fetches
+    // from the LMS server (external images through LMS's imageproxy).
+    private Uri resolveImageUri(String image) {
+        String path = ArtworkProvider.lmsPath(image, rpc.getServerUrl(), LIST_IMAGE_SIZE);
+        if (null==path) return null;
+        if (path.matches("music/[^/]+/cover")) {
             path += LIST_IMAGE_SIZE;
         }
-        return ArtworkProvider.wrap(context, serverUrl + path);
+        return ArtworkProvider.wrap(context, path);
     }
 
     private MediaBrowserCompat.MediaItem buildBrowsableItem(String mediaId, String title, Uri iconUri) {
