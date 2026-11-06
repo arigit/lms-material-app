@@ -71,7 +71,7 @@ There are three configuration points to check: each of the android apps, and the
   - When album is selected: show tracks
   - Ignore the car's play on connect: ON
   - Resume after reconnecting: ON
-  - Include Rediscover Albums list: ON (after installing the [Rediscover Releases](https://github.com/arigit/LMS-Rediscover-Your-Music) plugin on the server)
+  - Show Rediscover Albums list: ON (after installing the [Rediscover Releases](https://github.com/arigit/LMS-Rediscover-Your-Music) plugin on the server)
 - Default Player: (set to the player name you chose in the squeezelite app config; avoid apostrophes "'" in this name)
 - Only Control Default: ON
 

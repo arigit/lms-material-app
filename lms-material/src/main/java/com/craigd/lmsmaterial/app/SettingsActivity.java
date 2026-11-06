@@ -435,7 +435,7 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         /**
-         * "Include Rediscover Albums list" needs the Rediscover Releases plugin on the server: if LMS says it
+         * "Show Rediscover Albums list" needs the Rediscover Releases plugin on the server: if LMS says it
          * doesn't have it, warn in the summary, and with a dialog when the setting has just been switched on.
          */
         private void checkRediscoverPlugin(SwitchPreferenceCompat pref, boolean justEnabled) {
