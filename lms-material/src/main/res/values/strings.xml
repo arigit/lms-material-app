@@ -88,7 +88,7 @@
     <string name="auto_show_unplayed">Show Unplayed Albums</string>
     <string name="auto_show_unplayed_summary">Add an item in the Albums Tab that shows a list of all albums that have never been played.</string>
     <string name="auto_show_rediscover">Show Rediscover Albums list</string>
-    <string name="auto_show_rediscover_summary">Under Albums: the same albums as Material\'s Rediscover Releases row. Requires the Rediscover Releases plugin on the LMS server.</string>
+    <string name="auto_show_rediscover_summary">Add an item in the Albums Tab that shows the albums of the Rediscover Releases list, the same as its row in Material. Requires the Rediscover Releases plugin on the LMS server.</string>
     <string name="rediscover_plugin_missing_title">Rediscover Releases plugin not found</string>
     <string name="rediscover_plugin_missing">The LMS server doesn\'t have the Rediscover Releases plugin, so Android Auto can\'t show Rediscover Albums. Install it in LMS under Settings › Manage Plugins, after adding this repository under Additional Repositories:\n\n%1$s</string>
     <string name="rediscover_plugin_missing_summary">Warning: the Rediscover Releases plugin was not found on the LMS server, so the list is hidden. Install the plugin on the server, or switch this off.</string>
