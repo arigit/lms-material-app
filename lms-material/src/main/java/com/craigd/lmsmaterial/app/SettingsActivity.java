@@ -16,16 +16,13 @@ import android.graphics.drawable.ColorDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.InputType;
-import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageButton;
 import android.widget.LinearLayout;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -40,9 +37,9 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 import androidx.preference.SwitchPreferenceCompat;
+import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import io.github.muddz.styleabletoast.StyleableToast;
@@ -500,14 +497,14 @@ public class SettingsActivity extends AppCompatActivity {
             SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(getContext());
             List<String> order = AutoTabOrder.parse(sharedPreferences.getString(AutoTabOrder.PREF_KEY, null));
             int padding = getResources().getDimensionPixelOffset(R.dimen.dlg_padding);
-            LinearLayout layout = new LinearLayout(getContext());
-            layout.setOrientation(LinearLayout.VERTICAL);
-            layout.setPadding(padding, padding / 2, padding / 2, 0);
-            populateTabOrderRows(layout, order);
+            RecyclerView list = new RecyclerView(getContext());
+            list.setPadding(padding, padding / 2, padding / 2, 0);
+            list.setClipToPadding(false);
+            new TabOrderAdapter(order, this::tabLabel).attachTo(list);
 
             AlertDialog.Builder builder = new AlertDialog.Builder(getContext());
             builder.setTitle(R.string.auto_tab_order);
-            builder.setView(layout);
+            builder.setView(list);
             builder.setPositiveButton(R.string.ok, (dialog, which) -> {
                 sharedPreferences.edit().putString(AutoTabOrder.PREF_KEY, AutoTabOrder.serialize(order)).apply();
                 updateTabOrderSummary(pref);
@@ -518,47 +515,6 @@ public class SettingsActivity extends AppCompatActivity {
             });
             builder.setNegativeButton(R.string.cancel, (dialog, which) -> dialog.cancel());
             builder.show();
-        }
-
-        private void populateTabOrderRows(LinearLayout layout, List<String> order) {
-            layout.removeAllViews();
-            Context context = layout.getContext();
-            for (int i = 0; i < order.size(); i++) {
-                final int pos = i;
-                LinearLayout row = new LinearLayout(context);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                row.setGravity(Gravity.CENTER_VERTICAL);
-
-                TextView label = new TextView(context);
-                label.setTextAppearance(android.R.style.TextAppearance_Material_Subhead);
-                label.setText((i + 1) + ". " + tabLabel(order.get(i)));
-                row.addView(label, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-                row.addView(tabOrderButton(context, R.drawable.ic_arrow_up, R.string.move_up, i > 0, () -> {
-                    Collections.swap(order, pos, pos - 1);
-                    populateTabOrderRows(layout, order);
-                }));
-                row.addView(tabOrderButton(context, R.drawable.ic_arrow_down, R.string.move_down, i < order.size() - 1, () -> {
-                    Collections.swap(order, pos, pos + 1);
-                    populateTabOrderRows(layout, order);
-                }));
-                layout.addView(row);
-            }
-        }
-
-        private ImageButton tabOrderButton(Context context, int icon, int description, boolean enabled, Runnable action) {
-            ImageButton button = new ImageButton(context);
-            button.setImageResource(icon);
-            TypedValue background = new TypedValue();
-            context.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, background, true);
-            button.setBackgroundResource(background.resourceId);
-            button.setContentDescription(getString(description));
-            int padding = getResources().getDimensionPixelOffset(R.dimen.dlg_padding) / 2;
-            button.setPadding(padding, padding / 2, padding, padding / 2);
-            button.setEnabled(enabled);
-            button.setAlpha(enabled ? 1.0f : 0.3f);
-            button.setOnClickListener(v -> action.run());
-            return button;
         }
 
         private void updateKioskSummary(Preference pref, SharedPreferences prefs) {

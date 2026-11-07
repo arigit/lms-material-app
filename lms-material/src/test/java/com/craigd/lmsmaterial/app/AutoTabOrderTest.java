@@ -26,4 +26,17 @@ public class AutoTabOrderTest {
                         AutoTabOrder.FAVORITES, AutoTabOrder.PLAYERS, AutoTabOrder.LIBRARIES, AutoTabOrder.COPY_QUEUE),
                 AutoTabOrder.parse("playlists,bogus,artists,playlists"));
     }
+
+    @Test
+    public void moveShiftsTheTabsInBetween() {
+        java.util.List<String> order = new java.util.ArrayList<>(Arrays.asList("a", "b", "c", "d"));
+        AutoTabOrder.move(order, 0, 2);
+        assertEquals(Arrays.asList("b", "c", "a", "d"), order);
+        AutoTabOrder.move(order, 3, 0);
+        assertEquals(Arrays.asList("d", "b", "c", "a"), order);
+        AutoTabOrder.move(order, 1, 1);
+        AutoTabOrder.move(order, 1, 4);
+        AutoTabOrder.move(order, -1, 0);
+        assertEquals(Arrays.asList("d", "b", "c", "a"), order);
+    }
 }
