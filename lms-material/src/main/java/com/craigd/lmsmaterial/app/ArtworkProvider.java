@@ -35,7 +35,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.regex.Pattern;
 
 /**
@@ -237,7 +236,7 @@ public class ArtworkProvider extends ContentProvider {
         if (size <= MAX_CACHE_BYTES) {
             return;
         }
-        Arrays.sort(files, Comparator.comparingLong(File::lastModified));
+        Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
         for (File f : files) {
             if (size <= MAX_CACHE_BYTES * 3 / 4) {
                 break;
