@@ -53,4 +53,14 @@ public class AutoTabOrder {
     public static String serialize(List<String> order) {
         return String.join(",", order);
     }
+
+    /**
+     * Moves the tab at {@code from} to {@code to}; the tabs in between shift by one.
+     */
+    public static void move(List<String> order, int from, int to) {
+        if (from==to || from < 0 || to < 0 || from >= order.size() || to >= order.size()) {
+            return;
+        }
+        order.add(to, order.remove(from));
+    }
 }
