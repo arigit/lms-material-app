@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -871,7 +870,10 @@ public class LmsBrowseHelper {
     static List<String> dailyOrder(Collection<String> ids, String day) {
         long seed = day.hashCode();
         List<String> ordered = new ArrayList<>(ids);
-        ordered.sort(Comparator.comparingLong((String id) -> mix64(seed * 1000003L + id.hashCode())).thenComparing(id -> id));
+        Collections.sort(ordered, (a, b) -> {
+            int cmp = Long.compare(mix64(seed * 1000003L + a.hashCode()), mix64(seed * 1000003L + b.hashCode()));
+            return 0!=cmp ? cmp : a.compareTo(b);
+        });
         return ordered;
     }
 
@@ -1056,7 +1058,8 @@ public class LmsBrowseHelper {
             JSONObject track = tracks.optJSONObject(i);
             String album = null==track ? "" : track.optString("album_id", "");
             if (!album.isEmpty()) {
-                plays.merge(album, track.optInt("playcount", 0), Integer::sum);
+                Integer count = plays.get(album);
+                plays.put(album, (null==count ? 0 : count) + track.optInt("playcount", 0));
             }
         }
     }
@@ -1398,7 +1401,7 @@ public class LmsBrowseHelper {
             for (int i = 0; null!=loop && i < loop.length(); i++) {
                 players.add(loop.getJSONObject(i));
             }
-            players.sort((a, b) -> a.optString("name", "").compareToIgnoreCase(b.optString("name", "")));
+            Collections.sort(players, (a, b) -> a.optString("name", "").compareToIgnoreCase(b.optString("name", "")));
             for (JSONObject player : players) {
                 String id = player.optString("playerid", "");
                 if (id.isEmpty() || id.equals(MainActivity.activePlayer) || 1!=player.optInt("connected", 0)) {
