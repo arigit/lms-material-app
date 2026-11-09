@@ -1478,7 +1478,7 @@ public class ControlService extends MediaBrowserServiceCompat {
 
         // The player app is only started when "Auto start player" is enabled, as on app start.
         autoPlayerStarted = prefs.getBoolean(SettingsActivity.AUTO_START_PLAYER_APP_PREF_KEY, false) &&
-                new LocalPlayer(prefs, getApplicationContext()).start();
+                new LocalPlayer(prefs, getApplicationContext()).start(true);
         if (null!=restrictedPlayer()) {
             // Only the default player may be used - the availability check waits for that one.
             startPlayerAvailabilityCheck();
