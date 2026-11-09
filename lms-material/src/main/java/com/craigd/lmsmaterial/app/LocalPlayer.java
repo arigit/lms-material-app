@@ -26,6 +26,8 @@ public class LocalPlayer {
     public static final String SQUEEZELITE_PKG = "org.lyrion.squeezelite";
     public static final String SQUEEZELITE_AR_PKG = "org.lyrion.squeezelite.ar";
     private static final String SQUEEZELITE_CLASS_PREFIX = "org.lyrion.squeezelite.";
+    // Tells Squeezelite (ar) that it is started because Android Auto connected (other players ignore it)
+    private static final String CAR_CONNECTING_EXTRA = "carConnecting";
     private final SharedPreferences sharedPreferences;
     private final Context context;
     private JsonRpc rpc = null;
@@ -62,8 +64,14 @@ public class LocalPlayer {
     }
 
     // Returns true if a player app is configured and was asked to start.
-    @SuppressLint("SdCardPath")
     public boolean start() {
+        return start(false);
+    }
+
+    // carConnecting: started because Android Auto connected, so the player can ignore the car's pause key
+    // that may follow before it sees the connection itself.
+    @SuppressLint("SdCardPath")
+    public boolean start(boolean carConnecting) {
         String playerApp = sharedPreferences.getString(SettingsActivity.PLAYER_APP_PREF_KEY, null);
         Utils.debug("Start player: " + playerApp);
         boolean started = false;
@@ -72,9 +80,9 @@ public class LocalPlayer {
         } else if (SQUEEZE_PLAYER.equals(playerApp)) {
             started = controlSqueezePlayer(true);
         } else if (SQUEEZELITE.equals(playerApp)) {
-            started = controlSqueezelite(true, SQUEEZELITE_PKG, "Squeezelite");
+            started = controlSqueezelite(true, SQUEEZELITE_PKG, "Squeezelite", carConnecting);
         } else if (SQUEEZELITE_AR.equals(playerApp)) {
-            started = controlSqueezelite(true, SQUEEZELITE_AR_PKG, "Squeezelite (ar)");
+            started = controlSqueezelite(true, SQUEEZELITE_AR_PKG, "Squeezelite (ar)", carConnecting);
         }
         if (started) {
             state = State.STARTED;
@@ -104,11 +112,11 @@ public class LocalPlayer {
                 state = State.STOPPED;
             }
         } else if (SQUEEZELITE.equals(playerApp)) {
-            if (controlSqueezelite(false, SQUEEZELITE_PKG, "Squeezelite")) {
+            if (controlSqueezelite(false, SQUEEZELITE_PKG, "Squeezelite", false)) {
                 state = State.STOPPED;
             }
         } else if (SQUEEZELITE_AR.equals(playerApp)) {
-            if (controlSqueezelite(false, SQUEEZELITE_AR_PKG, "Squeezelite (ar)")) {
+            if (controlSqueezelite(false, SQUEEZELITE_AR_PKG, "Squeezelite (ar)", false)) {
                 state = State.STOPPED;
             }
         }
@@ -166,7 +174,7 @@ public class LocalPlayer {
         }
     }
 
-    private boolean controlSqueezelite(boolean start, String pkg, String name) {
+    private boolean controlSqueezelite(boolean start, String pkg, String name, boolean carConnecting) {
         if (!Utils.isInstalled(context, pkg, name)) {
             return false;
         }
@@ -174,6 +182,9 @@ public class LocalPlayer {
             Intent intent = new Intent();
             if (start) {
                 intent.setClassName(pkg, SQUEEZELITE_CLASS_PREFIX+"PlayerService");
+                if (carConnecting) {
+                    intent.putExtra(CAR_CONNECTING_EXTRA, true);
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent);
                 } else {
