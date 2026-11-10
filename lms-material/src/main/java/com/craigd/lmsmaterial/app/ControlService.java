@@ -80,6 +80,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ControlService extends MediaBrowserServiceCompat {
     public static final String NO_NOTIFICATION = "none";
@@ -191,6 +192,13 @@ public class ControlService extends MediaBrowserServiceCompat {
     private Runnable playAfterStart;
     private int playerRestarts;
     private long nextPlayerRestart;
+    // Each play that may wait (for the LMS query, or the player app to start) gets the next number; Pause, a
+    // newer play or another player being selected moves it on, so a waiting play that is no longer wanted is dropped.
+    private final AtomicInteger playRequest = new AtomicInteger();
+    // The player ID this service last saved as selected: the prefs listener's activePlayerChanged() is for
+    // selections made elsewhere, and would cancel the start or play this selection is part of. Main thread only.
+    private String selectedHere;
+    private boolean connectPlayIgnored; // the car's play on connect was ignored (only one per connect)
     // Position saved when Power switched the active player off, if LMS is set to pause it then. A Squeezelite
     // player disconnects when switched off, so LMS stops it and forgets the position: seek back once it plays again.
     private String resumePlayer;
@@ -217,7 +225,12 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (AutoTabOrder.PREF_KEY.equals(key)) {
             notifyChildrenChanged(LmsBrowseHelper.ROOT_ID);
         } else if (MainActivity.CURRENT_PLAYER_ID_KEY.equals(key)) {
-            activePlayerChanged();
+            String player = sharedPreferences.getString(key, null);
+            if (null!=player && player.equals(selectedHere)) {
+                selectedHere = null;
+            } else {
+                activePlayerChanged();
+            }
         } else if (SettingsActivity.SINGLE_PLAYER_PREF_KEY.equals(key) || SettingsActivity.DEFAULT_PLAYER_PREF_KEY.equals(key)) {
             applyPlayerRestriction();
             startPlayerAvailabilityCheck();
@@ -396,8 +409,10 @@ public class ControlService extends MediaBrowserServiceCompat {
      * automatically" off. With the setting on, a play from Android Auto that soon after the connect is ignored.
      */
     private boolean isConnectAutoPlay() {
-        if (!prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) || 0==lastAutoConnect ||
-                SystemClock.elapsedRealtime() - lastAutoConnect > CONNECT_PLAY_IGNORE_MS) {
+        // Only one play per connect: Android Auto doesn't tell the car's play from a tap, so a second play in the
+        // window (the user pressing it again) is let through.
+        if (connectPlayIgnored || !prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) ||
+                0==lastAutoConnect || SystemClock.elapsedRealtime() - lastAutoConnect > CONNECT_PLAY_IGNORE_MS) {
             return false;
         }
         androidx.media.MediaSessionManager.RemoteUserInfo info = controllerInfo();
@@ -412,6 +427,7 @@ public class ControlService extends MediaBrowserServiceCompat {
                     Utils.debug("from " + controllerName());
                     if (isConnectAutoPlay()) {
                         Utils.debug("Ignoring play on car connect");
+                        connectPlayIgnored = true;
                         return;
                     }
                     playOnPlayer(() -> {
@@ -425,6 +441,7 @@ public class ControlService extends MediaBrowserServiceCompat {
                 @Override
                 public void onPause() {
                     Utils.debug("from " + controllerName());
+                    cancelPendingPlay("paused");
                     sendCommand(PAUSE_COMMAND);
                 }
 
@@ -978,6 +995,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             } else if (PLAY_TRACK.equals(action)) {
                 sendCommand(PLAY_COMMAND);
             } else if (PAUSE_TRACK.equals(action)) {
+                cancelPendingPlay("paused");
                 sendCommand(PAUSE_COMMAND);
             } else if (NEXT_TRACK.equals(action)) {
                 sendCommand(NEXT_COMMAND);
@@ -1035,6 +1053,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         Utils.debug("Active player changed to " + player);
+        cancelPendingPlay("another player selected");
         cancelPlayerAvailabilityCheck();
         cometClient.setPlayer(player);
         if (!cometClient.isConnected() && Utils.isNetworkConnected(this)) {
@@ -1086,6 +1105,35 @@ public class ControlService extends MediaBrowserServiceCompat {
         playAfterStart = null;
     }
 
+    // Main thread only (see selectedHere).
+    private void saveSelectedPlayer(String playerId) {
+        if (playerId.equals(prefs.getString(MainActivity.CURRENT_PLAYER_ID_KEY, null))) {
+            return; // unchanged: the listener isn't called
+        }
+        selectedHere = playerId;
+        prefs.edit().putString(MainActivity.CURRENT_PLAYER_ID_KEY, playerId).apply();
+    }
+
+    // A play waiting for the player is no longer wanted. Main thread only.
+    private void cancelPendingPlay(String reason) {
+        playRequest.incrementAndGet();
+        if (null!=playAfterStart) {
+            Utils.debug("Dropping the play waiting for the player: " + reason);
+            playAfterStart = null;
+        }
+    }
+
+    // Runs play only if no Pause, newer play or other player selection came since it was requested.
+    private Runnable guardPlay(int request, String playerId, Runnable play) {
+        return () -> {
+            if (request!=playRequest.get() || !Objects.equals(playerId, MainActivity.activePlayer)) {
+                Utils.debug("Dropping play requested for " + playerId + ": paused, replaced or another player selected");
+                return;
+            }
+            play.run();
+        };
+    }
+
     private void checkPlayerAvailability() {
         final String playerId = MainActivity.activePlayer;
         final String restricted = restrictedPlayer();
@@ -1121,7 +1169,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             if (changed) {
                 Utils.debug("Selecting default player " + player.name + ", id:" + player.id);
                 MainActivity.activePlayer = player.id;
-                prefs.edit().putString(MainActivity.CURRENT_PLAYER_ID_KEY, player.id).apply();
+                saveSelectedPlayer(player.id);
             }
             MainActivity.activePlayerName = player.name;
             boolean started = playerStartPending;
@@ -1132,7 +1180,10 @@ public class ControlService extends MediaBrowserServiceCompat {
                 cometClient.reconnect();
             }
             if (started) {
-                powerOn(player);
+                // Only this phone's player, whose app was started here; a player elsewhere is left as it is.
+                if (isLocalPlayer(player)) {
+                    powerOn(player);
+                }
                 if (null!=playAfterStart) {
                     Runnable play = playAfterStart;
                     playAfterStart = null;
@@ -1334,6 +1385,11 @@ public class ControlService extends MediaBrowserServiceCompat {
                 hasPlayerApp());
     }
 
+    private boolean isLocalPlayer(PlayerAvailability.Player player) {
+        return PlayerAvailability.isLocalPlayer(player, player.id, MainActivity.getLocalIpAddresses(),
+                prefs.getString(PlayerAvailability.LOCAL_PLAYER_ID_KEY, null), hasPlayerApp());
+    }
+
     private boolean hasPlayerApp() {
         String playerApp = prefs.getString(SettingsActivity.PLAYER_APP_PREF_KEY, null);
         return !Utils.isEmpty(playerApp) && !LocalPlayer.NO_PLAYER.equals(playerApp);
@@ -1351,8 +1407,10 @@ public class ControlService extends MediaBrowserServiceCompat {
     // it on first, or, if its player app stopped when it was switched off, start that and play once it connects.
     // Playing before it connects would make LMS run through the whole queue, as every track fails at once.
     // Called on the browse executor; play is run on it, now or once the player connects.
-    private void switchOnForPlay(Runnable play) {
+    private void switchOnForPlay(Runnable requestedPlay) {
         String playerId = MainActivity.activePlayer;
+        int request = playRequest.incrementAndGet();
+        Runnable play = guardPlay(request, playerId, requestedPlay);
         // Not skipped when the last status says the player is on: that can be stale.
         if (null==restrictedPlayer() || Utils.isEmpty(playerId)) {
             play.run();
@@ -1377,8 +1435,8 @@ public class ControlService extends MediaBrowserServiceCompat {
             }
             if (isLocalPlayer(players, playerId)) {
                 // If it still isn't on, the player app is restarted and the current track played once it connects.
-                handler.postDelayed(() -> checkSwitchedOn(playerId, () -> handler.post(() -> sendCommand(PLAY_COMMAND))),
-                        POWER_ON_CHECK_MS);
+                Runnable playAgain = guardPlay(request, playerId, () -> handler.post(() -> sendCommand(PLAY_COMMAND)));
+                handler.postDelayed(() -> checkSwitchedOn(playerId, playAgain), POWER_ON_CHECK_MS);
             }
         }
         play.run();
@@ -1465,6 +1523,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         lastAutoConnect = now;
+        connectPlayIgnored = false;
         Utils.debug("Android Auto connected");
         // Queued before Android Auto's first loadChildren, so the root and its lists use a valid selection.
         getBrowseExecutor().execute(() -> {
@@ -1480,9 +1539,10 @@ public class ControlService extends MediaBrowserServiceCompat {
         autoPlayerStarted = prefs.getBoolean(SettingsActivity.AUTO_START_PLAYER_APP_PREF_KEY, false) &&
                 new LocalPlayer(prefs, getApplicationContext()).start(true);
         if (null!=restrictedPlayer()) {
-            // Only the default player may be used - the availability check waits for that one.
+            // Only the default player may be used - the availability check waits for that one. It is switched on
+            // (and its app restarted if it doesn't connect) only if the player app was started here.
             startPlayerAvailabilityCheck();
-            playerStartPending = true;
+            playerStartPending = autoPlayerStarted;
             playerRestarts = 0;
             nextPlayerRestart = now + PLAYER_RESTART_MS;
             return;
@@ -1512,7 +1572,8 @@ public class ControlService extends MediaBrowserServiceCompat {
 
         if (null!=local) {
             boolean localIsDefault = null!=defaultPlayer && PlayerAvailability.isAllowed(defaultPlayer, local.id, local.name);
-            useAutoPlayer(localIsDefault || null==active || local.id.equals(active.id) ? local : active);
+            PlayerAvailability.Player use = localIsDefault || null==active || local.id.equals(active.id) ? local : active;
+            useAutoPlayer(use, use==local);
             return;
         }
         if (autoPlayerStarted && !activeIsDefault && SystemClock.elapsedRealtime() < autoPlayerDeadline) {
@@ -1524,27 +1585,31 @@ public class ControlService extends MediaBrowserServiceCompat {
             active = PlayerAvailability.findConnectedAllowedPlayer(players, defaultPlayer);
         }
         if (null!=active) {
-            useAutoPlayer(active);
+            useAutoPlayer(active, false);
         } else {
             Utils.debug("No connected player for Android Auto");
             startPlayerAvailabilityCheck();
         }
     }
 
-    private void useAutoPlayer(PlayerAvailability.Player player) {
+    // switchOn: the player is this phone's, whose app was started for this connect. Any other player (e.g. one at
+    // home, switched off on purpose) is only selected, not switched on.
+    private void useAutoPlayer(PlayerAvailability.Player player, boolean switchOn) {
         boolean changed = !player.id.equals(MainActivity.activePlayer);
         Utils.debug("Android Auto player " + player.name + ", id:" + player.id + (changed ? " (selected)" : ""));
         MainActivity.activePlayer = player.id;
         MainActivity.activePlayerName = player.name;
         if (changed) {
-            prefs.edit().putString(MainActivity.CURRENT_PLAYER_ID_KEY, player.id).apply();
+            saveSelectedPlayer(player.id);
         }
         cancelPlayerAvailabilityCheck();
         // Always reconnect: the status subscription may have been made before the player existed in LMS,
         // leaving it shown as disconnected.
         cometClient.setPlayer(player.id);
         cometClient.reconnect();
-        powerOn(player);
+        if (switchOn) {
+            powerOn(player);
+        }
         updateMediaSession();
         updateNotification();
         notifyChildrenChanged(LmsBrowseHelper.PLAYERS_ID);

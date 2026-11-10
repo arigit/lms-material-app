@@ -145,30 +145,52 @@ final class PlayerAvailability {
     }
 
     // A connected player running on this device: by IP, else (see isLocalPlayer) the player last seen at its IP.
+    // Several players at this device's address (e.g. two player apps installed and running) are ambiguous: then
+    // only the remembered player is taken, if it is one of them.
     static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses, String localPlayerId,
                                            boolean hasPlayerApp) {
-        Player player = findConnectedLocalPlayer(players, localAddresses);
-        if (player != null || players == null) {
-            return player;
+        List<Player> byIp = connectedPlayersAt(players, localAddresses);
+        if (byIp.size() == 1) {
+            return byIp.get(0);
+        }
+        boolean remembered = localPlayerId != null && !localPlayerId.isEmpty();
+        if (byIp.size() > 1) {
+            if (remembered) {
+                for (Player p : byIp) {
+                    if (localPlayerId.equals(p.id)) {
+                        return p;
+                    }
+                }
+            }
+            return null;
+        }
+        if (players == null || !hasPlayerApp || !remembered) {
+            return null;
         }
         for (Player p : players) {
-            if (p.connected && isLocalPlayer(p, p.id, localAddresses, localPlayerId, hasPlayerApp)) {
+            if (p.connected && localPlayerId.equals(p.id)) {
                 return p;
             }
         }
         return null;
     }
 
-    // A connected player running on this device, e.g. the Squeezelite app.
+    // The connected player running on this device, e.g. the Squeezelite app, by IP; null if none or several.
     static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses) {
-        if (players == null || localAddresses == null) {
-            return null;
+        List<Player> byIp = connectedPlayersAt(players, localAddresses);
+        return byIp.size() == 1 ? byIp.get(0) : null;
+    }
+
+    private static List<Player> connectedPlayersAt(List<Player> players, Set<String> addresses) {
+        List<Player> found = new ArrayList<>();
+        if (players == null || addresses == null) {
+            return found;
         }
         for (Player player : players) {
-            if (player.connected && localAddresses.contains(player.ip)) {
-                return player;
+            if (player.connected && addresses.contains(player.ip)) {
+                found.add(player);
             }
         }
-        return null;
+        return found;
     }
 }
