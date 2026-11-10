@@ -41,6 +41,14 @@
                 android:text="@string/waiting_for_network"
                 android:layout_gravity="center"
                 android:textSize="20dp"/>
+            <Button
+                android:id="@+id/progressSettings"
+                android:layout_marginTop="10dp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/title_activity_settings"
+                android:visibility="gone"
+                android:layout_gravity="center"/>
         </LinearLayout>
     </FrameLayout>
 </RelativeLayout>
