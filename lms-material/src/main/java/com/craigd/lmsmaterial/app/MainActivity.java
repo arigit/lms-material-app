@@ -104,6 +104,7 @@ public class MainActivity extends AppCompatActivity {
     public static final String LMS_PASSWORD_KEY = "lms-password";
     static final String CURRENT_PLAYER_ID_KEY = "current_player_id";
     private static final int PAGE_TIMEOUT = 5000; // ms
+    private static final int PAGE_GIVE_UP_TIMEOUT = 30000; // ms, with a network connection
     private static final int DISCONNECT_TIMEOUT = 6; // seconds
     private static final int DISCONNECT_TIMEOUT_WITHOUT_NETWORK = 10; // seconds
     // After this long in the background, or after the network changed meanwhile, the page is reloaded: the web UI
@@ -490,13 +491,24 @@ public class MainActivity extends AppCompatActivity {
         if (Utils.isNetworkConnected(this)) {
             // Slow connection: keep waiting, but let the user open settings. Real errors are handled by
             // onReceivedError / onReceivedHttpError.
-            Utils.debug("Page not started yet, still waiting");
-            showProgress(R.string.still_connecting, true);
+            waitForSlowPage();
             return;
         }
         Utils.debug("Page failed to load");
         discoverServer(false);
     };
+
+    private final Runnable pageLoadGiveUp = () -> {
+        Utils.debug("Page failed to load");
+        hideProgress();
+        discoverServer(false);
+    };
+
+    private void waitForSlowPage() {
+        Utils.debug("Page not started yet, still waiting");
+        showProgress(R.string.still_connecting, true);
+        pageLoadHandler.postDelayed(pageLoadGiveUp, PAGE_GIVE_UP_TIMEOUT-PAGE_TIMEOUT);
+    }
 
     private void showProgress(int text, boolean showSettings) {
         ((TextView)findViewById(R.id.textView)).setText(text);
@@ -510,6 +522,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void stopPageLoadWait() {
         pageLoadHandler.removeCallbacks(pageLoadTimeout);
+        pageLoadHandler.removeCallbacks(pageLoadGiveUp);
         if (findViewById(R.id.progressSettings).getVisibility()==View.VISIBLE) {
             hideProgress();
         }
