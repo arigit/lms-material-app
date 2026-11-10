@@ -165,6 +165,30 @@ public class PlayerAvailabilityTest {
         assertNull(PlayerAvailability.rememberLocalPlayer(prefs(new HashMap<>()), null, Collections.singleton("192.168.1.30")));
     }
 
+    @Test
+    public void twoPlayersAtThisDevicesAddressAreAmbiguous() {
+        // E.g. the official Squeezelite app and a fork, both running on the phone.
+        List<PlayerAvailability.Player> players = Arrays.asList(
+                new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", true, "192.168.1.20"),
+                new PlayerAvailability.Player("00:11:22:33:44:55", "Squeezelite", true, "192.168.1.30"),
+                new PlayerAvailability.Player("66:77:88:99:aa:bb", "Squeezelite (fork)", true, "192.168.1.30"));
+        Set<String> phone = Collections.singleton("192.168.1.30");
+
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, phone));
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, phone, null, true));
+        // The remembered player is taken if it is one of them...
+        assertEquals("66:77:88:99:aa:bb",
+                PlayerAvailability.findConnectedLocalPlayer(players, phone, "66:77:88:99:aa:bb", true).id);
+        // ...but not another one.
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, phone, "aa:bb:cc:dd:ee:ff", true));
+
+        // Nothing is remembered from an ambiguous match, and a remembered ID is kept.
+        Map<String, String> stored = new HashMap<>();
+        assertNull(PlayerAvailability.rememberLocalPlayer(prefs(stored), players, phone));
+        stored.put(PlayerAvailability.LOCAL_PLAYER_ID_KEY, "00:11:22:33:44:55");
+        assertEquals("00:11:22:33:44:55", PlayerAvailability.rememberLocalPlayer(prefs(stored), players, phone));
+    }
+
     private static SharedPreferences prefs(Map<String, String> stored) {
         SharedPreferences prefs = mock(SharedPreferences.class);
         SharedPreferences.Editor editor = mock(SharedPreferences.Editor.class);

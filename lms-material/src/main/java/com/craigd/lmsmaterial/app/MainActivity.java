@@ -1193,7 +1193,9 @@ public class MainActivity extends AppCompatActivity {
             if (pageLoaded) {
                 localPlayer.autoStart(true);
                 Network network = activeNetwork();
-                boolean networkChanged = null!=pauseNetwork && null!=network && !pauseNetwork.equals(network);
+                // Also from no network at all (the page's connections were lost then too). Not to no network: a
+                // reload would fail and open Settings.
+                boolean networkChanged = null!=network && !network.equals(pauseNetwork);
                 if (pauseTime>0 && (networkChanged || SystemClock.elapsedRealtime()-pauseTime>RELOAD_AFTER_BACKGROUND_MS)) {
                     Utils.info("Reload URL after " + ((SystemClock.elapsedRealtime()-pauseTime)/60000) + " minutes in the background" +
                                (networkChanged ? ", network changed" : ""));
