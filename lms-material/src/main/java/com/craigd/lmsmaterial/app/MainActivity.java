@@ -102,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
     public static final String LMS_PASSWORD_KEY = "lms-password";
     private static final String CURRENT_PLAYER_ID_KEY = "current_player_id";
     private static final int PAGE_TIMEOUT = 5000; // ms
-    private static final int PAGE_GIVE_UP_TIMEOUT = 30000; // ms, with a network connection
+    private static final int PAGE_GIVE_UP_TIMEOUT = 35000; // ms, with a network connection
     private static final int DISCONNECT_TIMEOUT = 6; // seconds
     private static final int DISCONNECT_TIMEOUT_WITHOUT_NETWORK = 10; // seconds
 
