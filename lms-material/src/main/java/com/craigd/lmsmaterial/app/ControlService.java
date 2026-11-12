@@ -46,6 +46,7 @@ import android.support.v4.media.session.PlaybackStateCompat;
 import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
+import android.view.KeyEvent;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -198,7 +199,11 @@ public class ControlService extends MediaBrowserServiceCompat {
     // The player ID this service last saved as selected: the prefs listener's activePlayerChanged() is for
     // selections made elsewhere, and would cancel the start or play this selection is part of. Main thread only.
     private String selectedHere;
-    private boolean connectPlayIgnored; // the car's play on connect was ignored (only one per connect)
+    // The last media key (ACTION_DOWN) and when it arrived. On Android 8.1+ the framework calls onPlay/onPause only
+    // after onMediaButtonEvent has returned, so a callback tells a key from a tap on the screen by its time.
+    private volatile long mediaKeyAt;
+    private volatile int mediaKeyCode;
+    private static final long MEDIA_KEY_DISPATCH_MS = 1000;
     // Position saved when Power switched the active player off, if LMS is set to pause it then. A Squeezelite
     // player disconnects when switched off, so LMS stops it and forgets the position: seek back once it plays again.
     private String resumePlayer;
@@ -406,12 +411,12 @@ public class ControlService extends MediaBrowserServiceCompat {
 
     /**
      * The car (or Android Auto) sends play a few seconds after connecting, even with Android Auto's "Start music
-     * automatically" off. With the setting on, a play from Android Auto that soon after the connect is ignored.
+     * automatically" off. With the setting on, every play from Android Auto that soon after the connect is
+     * ignored if it came as a media key: the car can send two (seen 7 s and 11 s after a connect), always as
+     * KEYCODE_MEDIA_PLAY, while a tap on Play on Android Auto's screen calls onPlay directly and still plays.
      */
     private boolean isConnectAutoPlay() {
-        // Only one play per connect: Android Auto doesn't tell the car's play from a tap, so a second play in the
-        // window (the user pressing it again) is let through.
-        if (connectPlayIgnored || !prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) ||
+        if (!prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) ||
                 0==lastAutoConnect || SystemClock.elapsedRealtime() - lastAutoConnect > CONNECT_PLAY_IGNORE_MS) {
             return false;
         }
@@ -419,15 +424,42 @@ public class ControlService extends MediaBrowserServiceCompat {
         return null!=info && ANDROID_AUTO_PKG.equals(info.getPackageName());
     }
 
+    // Whether the callback being run was dispatched from one of these media keys (consumes the key).
+    private boolean fromMediaKey(int... codes) {
+        if (SystemClock.elapsedRealtime() - mediaKeyAt > MEDIA_KEY_DISPATCH_MS) {
+            return false;
+        }
+        for (int code : codes) {
+            if (code == mediaKeyCode) {
+                mediaKeyAt = 0;
+                return true;
+            }
+        }
+        return false;
+    }
+
     private synchronized MediaSessionCompat.Callback getMediaSessionCallback() {
         if (null==mediaSessionCallback) {
             mediaSessionCallback = new MediaSessionCompat.Callback() {
+                // Media keys (the car's play on connect is one) arrive here before onPlay/onPause; a tap on
+                // Android Auto's screen calls those directly.
+                @Override
+                public boolean onMediaButtonEvent(Intent mediaButtonEvent) {
+                    KeyEvent event = mediaButtonEvent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
+                    if (null!=event && KeyEvent.ACTION_DOWN==event.getAction()) {
+                        mediaKeyCode = event.getKeyCode();
+                        mediaKeyAt = SystemClock.elapsedRealtime();
+                    }
+                    return super.onMediaButtonEvent(mediaButtonEvent);
+                }
+
                 @Override
                 public void onPlay() {
-                    Utils.debug("from " + controllerName());
-                    if (isConnectAutoPlay()) {
+                    boolean key = fromMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_HEADSETHOOK);
+                    Utils.debug("from " + controllerName() + (key ? " (media key)" : ""));
+                    if (key && isConnectAutoPlay()) {
                         Utils.debug("Ignoring play on car connect");
-                        connectPlayIgnored = true;
                         return;
                     }
                     playOnPlayer(() -> {
@@ -1523,7 +1555,6 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         lastAutoConnect = now;
-        connectPlayIgnored = false;
         Utils.debug("Android Auto connected");
         // Queued before Android Auto's first loadChildren, so the root and its lists use a valid selection.
         getBrowseExecutor().execute(() -> {
