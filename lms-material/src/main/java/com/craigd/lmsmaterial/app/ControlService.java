@@ -202,7 +202,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     // The player ID this service last saved as selected: the prefs listener's activePlayerChanged() is for
     // selections made elsewhere, and would cancel the start or play this selection is part of. Main thread only.
     private String selectedHere;
-    private boolean connectPlayIgnored; // the car's play on connect was ignored (only one per connect)
+    private boolean inMediaKey; // a media key is being dispatched to the media session callback (its thread only)
     // Position saved when Power switched the active player off, if LMS is set to pause it then. A Squeezelite
     // player disconnects when switched off, so LMS stops it and forgets the position: seek back once it plays again.
     private String resumePlayer;
@@ -441,12 +441,12 @@ public class ControlService extends MediaBrowserServiceCompat {
 
     /**
      * The car (or Android Auto) sends play a few seconds after connecting, even with Android Auto's "Start music
-     * automatically" off. With the setting on, a play from Android Auto that soon after the connect is ignored.
+     * automatically" off. With the setting on, every play from Android Auto that soon after the connect is
+     * ignored if it came as a media key: the car can send two (seen 7 s and 11 s after a connect), always as
+     * KEYCODE_MEDIA_PLAY, while a tap on Play on Android Auto's screen calls onPlay directly and still plays.
      */
     private boolean isConnectAutoPlay() {
-        // Only one play per connect: Android Auto doesn't tell the car's play from a tap, so a second play in the
-        // window (the user pressing it again) is let through.
-        if (connectPlayIgnored || !prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) ||
+        if (!inMediaKey || !prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) ||
                 0==lastAutoConnect || SystemClock.elapsedRealtime() - lastAutoConnect > CONNECT_PLAY_IGNORE_MS) {
             return false;
         }
@@ -469,7 +469,13 @@ public class ControlService extends MediaBrowserServiceCompat {
                                 event.getRepeatCount() + ", device:" + event.getDeviceId() + ", source:0x" +
                                 Integer.toHexString(event.getSource()) + ", from " + controllerName());
                     }
-                    return super.onMediaButtonEvent(mediaButtonEvent);
+                    // super dispatches the key to onPlay/onPause/... on this thread, before it returns.
+                    inMediaKey = true;
+                    try {
+                        return super.onMediaButtonEvent(mediaButtonEvent);
+                    } finally {
+                        inMediaKey = false;
+                    }
                 }
 
                 @Override
@@ -477,7 +483,6 @@ public class ControlService extends MediaBrowserServiceCompat {
                     Utils.debug("from " + controllerName());
                     if (isConnectAutoPlay()) {
                         Utils.debug("Ignoring play on car connect");
-                        connectPlayIgnored = true;
                         return;
                     }
                     playOnPlayer(() -> {
@@ -1811,7 +1816,6 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         lastAutoConnect = now;
-        connectPlayIgnored = false;
         Utils.debug("Android Auto connected");
         loadCarResume();
         getBrowseHelper().prefetchDailyLists();
