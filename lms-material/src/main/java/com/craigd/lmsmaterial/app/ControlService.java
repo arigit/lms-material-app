@@ -284,6 +284,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     private double queueTimestamp = -1;
     private int queueStart = -1;
     private int queueTotal = 0;
+    private String queueTitle; // last title set on the media session
     private boolean queueLoading = false;
     private final SharedPreferences.OnSharedPreferenceChangeListener prefsListener = (sharedPreferences, key) -> {
         if (AutoTabOrder.PREF_KEY.equals(key)) {
@@ -814,6 +815,23 @@ public class ControlService extends MediaBrowserServiceCompat {
         queueTimestamp = -1;
         queueStart = -1;
         queueTotal = 0;
+        queueTitle = null;
+    }
+
+    // "Queue · 12 of 87": Android Auto shows the queue title above the list as one line of text. Only set when
+    // it changes, like the rest of the session.
+    private void updateQueueTitle() {
+        if (null==mediaSession) {
+            return;
+        }
+        String title = null!=lastStatus && lastStatus.id.equals(queuePlayer) && lastStatus.playlistIndex >= 0 &&
+                queueTotal > 0
+                ? getString(R.string.queue_position, lastStatus.playlistIndex + 1, queueTotal)
+                : getString(R.string.queue);
+        if (!title.equals(queueTitle)) {
+            queueTitle = title;
+            mediaSession.setQueueTitle(title);
+        }
     }
 
     // Reload the queue when the player or playlist changes, or the current track leaves the shown window.
@@ -888,11 +906,11 @@ public class ControlService extends MediaBrowserServiceCompat {
                     return;
                 }
                 mediaSession.setQueue(queue);
-                mediaSession.setQueueTitle(getString(R.string.queue));
                 queuePlayer = player;
                 queueTimestamp = timestamp;
                 queueStart = queueFrom;
                 queueTotal = queueSize;
+                updateQueueTitle();
                 // Status may have moved on while loading (e.g. next track) - re-check.
                 if (null!=lastStatus && lastStatus.id.equals(player)) {
                     updateQueue();
@@ -1005,6 +1023,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
         checkRatingsSupport();
         updateQueue();
+        updateQueueTitle();
         // No star text here: Android Auto shows the same subtitle in Now Playing and the split-screen
         // card, so the rating is shown only by the rating button's icon.
         String artist = lastStatus.artist;
