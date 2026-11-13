@@ -217,9 +217,8 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final long KEY_PAUSE_BEFORE_DISCONNECT_MS = 5000;
     // Status re-reads that don't rely on CometD pushes. Right after a resume LMS reports a position extrapolated
     // over the pause (from the player's last status before it), up to the end of the track, and doesn't always
-    // push the correction (car 2026-11-12 17:37: 6:02 of 6:02 shown for a minute while it played from 1:17); and a
-    // track change push can be missed. So: re-read after a resume, while the position is at the end of the track,
-    // and a few seconds after the track should have ended.
+    // push the correction; and a track change push can be missed. So: re-read after a resume, while the position
+    // is at the end of the track, and a few seconds after the track should have ended.
     private static final long STALE_TIME_RECHECK_MS = 1500;
     private static final int STALE_TIME_MAX_CHECKS = 5;
     private static final long TRACK_END_RECHECK_MS = 3000;
@@ -523,7 +522,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
     }
 
-    // Main thread. See STALE_TIME_RECHECK_MS.
+    // Main thread. See RESUME_RECHECK_MS.
     private void scheduleStatusChecks(PlayerStatus status) {
         boolean playing = null!=status && !Utils.isEmpty(status.id) && status.id.equals(MainActivity.activePlayer) &&
                 status.isPlaying;
