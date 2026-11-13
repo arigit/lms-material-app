@@ -470,8 +470,10 @@ public class CometClient {
 
     private void handlePlayerStatus(String id, String mode, String remote_title, String artist, String album, String title,
                                     String artwork_url, String coverid, long duration, long time, int volume,
-                                    long trackId, int rating, int playlistIndex, double playlistTimestamp, boolean powered, int shuffle) {
+                                    long trackId, int rating, int playlistIndex, double playlistTimestamp, boolean powered, int shuffle,
+                                    boolean pushed) {
         PlayerStatus status = new PlayerStatus();
+        status.pushed = pushed;
         status.id = id;
         status.timestamp = SystemClock.elapsedRealtime();
         status.mode = mode;
@@ -501,8 +503,45 @@ public class CometClient {
         if (Utils.isEmpty(status.cover) && !Utils.isEmpty(coverid)) {
             status.cover = coverUrl("/music/"+coverid+"/cover"+IMAGE_SIZE);
         }
-        Utils.debug(status.toString());
+        Utils.debug(status.toString() + (pushed ? "" : " (read)"));
+        checkPushes(status);
         service.updatePlayerStatus(status);
+    }
+
+    // A status read that shows a change (track, queue position, play/pause) which no push brought means the
+    // subscription has gone quiet while the connection looks fine (seen after a burst of reconnects: no pushes
+    // until the stream next dropped). If no push arrives soon after, reconnect, at most once a minute.
+    private static final long MISSED_PUSH_GRACE_MS = 3000;
+    private static final long MISSED_PUSH_RECONNECT_MS = 60000;
+    private PlayerStatus lastPushed;
+    private volatile long lastPushAt;
+    private long lastMissedPushReconnect;
+
+    private void checkPushes(PlayerStatus status) {
+        if (status.pushed) {
+            lastPushed = status;
+            lastPushAt = SystemClock.elapsedRealtime();
+            return;
+        }
+        PlayerStatus pushed = lastPushed;
+        if (null==pushed || !Objects.equals(pushed.id, status.id) || !isConnected() ||
+                (pushed.trackId == status.trackId && pushed.playlistIndex == status.playlistIndex &&
+                 Objects.equals(pushed.mode, status.mode))) {
+            return;
+        }
+        long seenAt = SystemClock.elapsedRealtime();
+        backgroundHandler.postDelayed(() -> {
+            long now = SystemClock.elapsedRealtime();
+            if (lastPushAt >= seenAt || now - lastMissedPushReconnect < MISSED_PUSH_RECONNECT_MS || !isConnected()) {
+                return;
+            }
+            PlayerStatus last = lastPushed;
+            Utils.info("Status change not pushed (" + (null==last ? "-" : last.mode + " " + last.playlistIndex) + " -> " +
+                    status.mode + " " + status.playlistIndex + "): reconnecting");
+            lastMissedPushReconnect = now;
+            lastPushed = null;
+            connect();
+        }, MISSED_PUSH_GRACE_MS);
     }
 
     private long parseLong(Object val) {
@@ -610,13 +649,13 @@ public class CometClient {
                         response.has("playlist_cur_index") ? (int) getFloat(response, "playlist_cur_index") : -1,
                         response.optDouble("playlist_timestamp", 0),
                         isPowered(response.opt("power"), response.opt("player_connected")),
-                        response.optInt("playlist shuffle", 0));
+                        response.optInt("playlist shuffle", 0), false);
                 return;
             }
         }
         handlePlayerStatus(id, getString(response, "mode"), null, null, null, null, null, null, 0, 0, volume, 0, 0, -1, 0,
                 isPowered(response.opt("power"), response.opt("player_connected")),
-                        response.optInt("playlist shuffle", 0));
+                        response.optInt("playlist shuffle", 0), false);
     }
 
     @SuppressWarnings("unchecked")
@@ -651,11 +690,11 @@ public class CometClient {
                     null==messageData.get("playlist_cur_index") ? -1 : (int) parseFloat(messageData.get("playlist_cur_index")),
                     parseDouble(messageData.get("playlist_timestamp")),
                     isPowered(messageData.get("power"), messageData.get("player_connected")),
-                    (int) parseFloat(messageData.get("playlist shuffle")));
+                    (int) parseFloat(messageData.get("playlist shuffle")), true);
         } else {
             handlePlayerStatus(playerId, (String)messageData.get("mode"), null, null, null, null, null, null, 0, 0, volume, 0, 0, -1, 0,
                     isPowered(messageData.get("power"), messageData.get("player_connected")),
-                    (int) parseFloat(messageData.get("playlist shuffle")));
+                    (int) parseFloat(messageData.get("playlist shuffle")), true);
         }
     }
 }

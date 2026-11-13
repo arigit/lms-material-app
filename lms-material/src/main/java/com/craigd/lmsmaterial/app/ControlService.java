@@ -202,7 +202,55 @@ public class ControlService extends MediaBrowserServiceCompat {
     // The player ID this service last saved as selected: the prefs listener's activePlayerChanged() is for
     // selections made elsewhere, and would cancel the start or play this selection is part of. Main thread only.
     private String selectedHere;
-    private boolean inMediaKey; // a media key is being dispatched to the media session callback (its thread only)
+    // The last media key (ACTION_DOWN) and when it arrived. On Android 8.1+ the framework calls onPlay/onPause only
+    // after onMediaButtonEvent has returned, so a callback tells a key from a tap on the screen by its time.
+    private volatile long mediaKeyAt;
+    private volatile int mediaKeyCode;
+    private static final long MEDIA_KEY_DISPATCH_MS = 1000;
+    // A pause sent through this app's media session (Android Auto's screen, a media key, the notification), and
+    // whether it came as a media key; cleared once the player plays again. Tells a pause by the user from the car's
+    // own pause at switch-off (a media key just before the disconnect, or the player app losing audio focus).
+    private long pausedHereAt;
+    private boolean pausedHereByKey;
+    private String pausedHerePlayer;
+    // A media key pause this long before the disconnect was the user's (the car's comes ~0.1 s before it).
+    private static final long KEY_PAUSE_BEFORE_DISCONNECT_MS = 5000;
+    // Status re-reads that don't rely on CometD pushes. Right after a resume LMS reports a position extrapolated
+    // over the pause (from the player's last status before it), up to the end of the track, and doesn't always
+    // push the correction (car 2026-11-12 17:37: 6:02 of 6:02 shown for a minute while it played from 1:17); and a
+    // track change push can be missed. So: re-read after a resume, while the position is at the end of the track,
+    // and a few seconds after the track should have ended.
+    private static final long STALE_TIME_RECHECK_MS = 1500;
+    private static final int STALE_TIME_MAX_CHECKS = 5;
+    private static final long TRACK_END_RECHECK_MS = 3000;
+    private static final long[] RESUME_RECHECK_MS = {1500, 4000};
+    private int staleTimeChecks;
+    private String playingStatusPlayer; // the player whose last status said playing (main thread)
+    private final Runnable resumeCheck = () -> requestActiveStatus("resumed");
+    // While the car is connected the status is read whenever none has arrived for this long, so Now Playing can't
+    // stay wrong for longer whatever happens to the CometD subscription (CometClient also reconnects when a read
+    // shows a change no push brought).
+    private static final long CAR_STATUS_MAX_AGE_MS = 15000;
+    private static final long CAR_STATUS_POLL_MS = 5000;
+    private volatile long lastStatusAt;
+    private final Runnable carStatusPoll = new Runnable() {
+        @Override
+        public void run() {
+            handler.removeCallbacks(this);
+            if (!carConnected) {
+                return;
+            }
+            if (SystemClock.elapsedRealtime() - lastStatusAt >= CAR_STATUS_MAX_AGE_MS) {
+                lastStatusAt = SystemClock.elapsedRealtime(); // one read per period, even if it gets no answer
+                if (null!=cometClient && !Utils.isEmpty(MainActivity.activePlayer)) {
+                    cometClient.getPlayerStatus(MainActivity.activePlayer);
+                }
+            }
+            handler.postDelayed(this, CAR_STATUS_POLL_MS);
+        }
+    };
+    private final Runnable staleTimeCheck = () -> requestActiveStatus("position at the end of the track");
+    private final Runnable trackEndCheck = () -> requestActiveStatus("track should have ended");
     // Position saved when Power switched the active player off, if LMS is set to pause it then. A Squeezelite
     // player disconnects when switched off, so LMS stops it and forgets the position: seek back once it plays again.
     private String resumePlayer;
@@ -446,12 +494,65 @@ public class ControlService extends MediaBrowserServiceCompat {
      * KEYCODE_MEDIA_PLAY, while a tap on Play on Android Auto's screen calls onPlay directly and still plays.
      */
     private boolean isConnectAutoPlay() {
-        if (!inMediaKey || !prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) ||
+        if (!prefs.getBoolean(SettingsActivity.IGNORE_CONNECT_PLAY_PREF_KEY, false) ||
                 0==lastAutoConnect || SystemClock.elapsedRealtime() - lastAutoConnect > CONNECT_PLAY_IGNORE_MS) {
             return false;
         }
         androidx.media.MediaSessionManager.RemoteUserInfo info = controllerInfo();
         return null!=info && ANDROID_AUTO_PKG.equals(info.getPackageName());
+    }
+
+    // Whether the callback being run was dispatched from one of these media keys (consumes the key).
+    private boolean fromMediaKey(int... codes) {
+        if (SystemClock.elapsedRealtime() - mediaKeyAt > MEDIA_KEY_DISPATCH_MS) {
+            return false;
+        }
+        for (int code : codes) {
+            if (code == mediaKeyCode) {
+                mediaKeyAt = 0;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void requestActiveStatus(String reason) {
+        if (null!=cometClient && !Utils.isEmpty(MainActivity.activePlayer)) {
+            Utils.debug("Re-reading the status: " + reason);
+            cometClient.getPlayerStatus(MainActivity.activePlayer);
+        }
+    }
+
+    // Main thread. See STALE_TIME_RECHECK_MS.
+    private void scheduleStatusChecks(PlayerStatus status) {
+        boolean playing = null!=status && !Utils.isEmpty(status.id) && status.id.equals(MainActivity.activePlayer) &&
+                status.isPlaying;
+        if (playing && !status.id.equals(playingStatusPlayer)) {
+            handler.removeCallbacks(resumeCheck);
+            for (long delay : RESUME_RECHECK_MS) {
+                handler.postDelayed(resumeCheck, delay);
+            }
+        }
+        playingStatusPlayer = playing ? status.id : null;
+        if (!playing || status.duration <= 0) {
+            handler.removeCallbacks(staleTimeCheck);
+            handler.removeCallbacks(trackEndCheck);
+            staleTimeChecks = 0;
+            return;
+        }
+        if (status.time >= status.duration - 500) {
+            handler.removeCallbacks(trackEndCheck);
+            if (staleTimeChecks < STALE_TIME_MAX_CHECKS) {
+                staleTimeChecks++;
+                handler.removeCallbacks(staleTimeCheck);
+                handler.postDelayed(staleTimeCheck, STALE_TIME_RECHECK_MS);
+            }
+            return;
+        }
+        staleTimeChecks = 0;
+        handler.removeCallbacks(staleTimeCheck);
+        handler.removeCallbacks(trackEndCheck);
+        handler.postDelayed(trackEndCheck, status.duration - status.time + TRACK_END_RECHECK_MS);
     }
 
     private synchronized MediaSessionCompat.Callback getMediaSessionCallback() {
@@ -469,19 +570,19 @@ public class ControlService extends MediaBrowserServiceCompat {
                                 event.getRepeatCount() + ", device:" + event.getDeviceId() + ", source:0x" +
                                 Integer.toHexString(event.getSource()) + ", from " + controllerName());
                     }
-                    // super dispatches the key to onPlay/onPause/... on this thread, before it returns.
-                    inMediaKey = true;
-                    try {
-                        return super.onMediaButtonEvent(mediaButtonEvent);
-                    } finally {
-                        inMediaKey = false;
+                    if (null!=event && KeyEvent.ACTION_DOWN==event.getAction()) {
+                        mediaKeyCode = event.getKeyCode();
+                        mediaKeyAt = SystemClock.elapsedRealtime();
                     }
+                    return super.onMediaButtonEvent(mediaButtonEvent);
                 }
 
                 @Override
                 public void onPlay() {
-                    Utils.debug("from " + controllerName());
-                    if (isConnectAutoPlay()) {
+                    boolean key = fromMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_HEADSETHOOK);
+                    Utils.debug("from " + controllerName() + (key ? " (media key)" : ""));
+                    if (key && isConnectAutoPlay()) {
                         Utils.debug("Ignoring play on car connect");
                         return;
                     }
@@ -496,7 +597,17 @@ public class ControlService extends MediaBrowserServiceCompat {
 
                 @Override
                 public void onPause() {
-                    Utils.debug("from " + controllerName());
+                    boolean key = fromMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_STOP);
+                    Utils.debug("from " + controllerName() + (key ? " (media key)" : ""));
+                    // Keep the first pause until the player plays again: the car's own pause at switch-off must
+                    // not replace the user's earlier one.
+                    if (0==pausedHereAt || !Utils.isEmpty(MainActivity.activePlayer) &&
+                            !MainActivity.activePlayer.equals(pausedHerePlayer)) {
+                        pausedHereAt = SystemClock.elapsedRealtime();
+                        pausedHereByKey = key;
+                        pausedHerePlayer = MainActivity.activePlayer;
+                    }
                     cancelPendingPlay("paused");
                     sendCommand(PAUSE_COMMAND);
                 }
@@ -819,6 +930,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     }
 
     public synchronized void updatePlayerStatus(PlayerStatus status) {
+        lastStatusAt = SystemClock.elapsedRealtime();
         if (null!=cometClient && cometClient.isConnected() && null!=status && (null==lastStatus || (status.id.equals(lastStatus.id) && !lastStatus.isPlaying && status.isPlaying))) {
             cometClient.getPlayerStatus(status.id);
         }
@@ -828,6 +940,13 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
         lastStatus = status;
         checkResumePosition(status);
+        handler.post(() -> {
+            if (null!=status && status.isPlaying && 0!=pausedHereAt && status.id.equals(pausedHerePlayer) &&
+                    SystemClock.elapsedRealtime() - pausedHereAt > 3000) {
+                pausedHereAt = 0; // playing again
+            }
+            scheduleStatusChecks(status);
+        });
         handler.post(() -> carResumeStatus(status));
         handler.post(this::updateNotification);
         handler.post(this::updateMediaSession);
@@ -1497,9 +1616,12 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         PlayerStatus status = lastStatus;
-        long sincePlaying = playerId.equals(playingPlayer) ? SystemClock.elapsedRealtime() - playingSeenAt : -1;
+        long now = SystemClock.elapsedRealtime();
+        long sincePlaying = playerId.equals(playingPlayer) ? now - playingSeenAt : -1;
+        long sinceUserPause = 0!=pausedHereAt && playerId.equals(pausedHerePlayer) &&
+                (!pausedHereByKey || now - pausedHereAt >= KEY_PAUSE_BEFORE_DISCONNECT_MS) ? now - pausedHereAt : -1;
         getBrowseExecutor().execute(() -> {
-            CarResume state = fetchCarState(playerId, status, sincePlaying);
+            CarResume state = fetchCarState(playerId, status, sincePlaying, sinceUserPause);
             Utils.debug("Saving car state: " + state);
             if (null==state) {
                 prefs.edit().remove(CAR_RESUME_STATE_PREF_KEY).apply();
@@ -1512,7 +1634,8 @@ public class ControlService extends MediaBrowserServiceCompat {
     // The player's current track and position, from LMS, or from the last status if LMS can't be reached; null if
     // it wasn't playing (CarResume.wasPlaying; sincePlaying: ms since it was last seen playing, -1 if not).
     // Called on the browse executor.
-    private CarResume fetchCarState(String playerId, PlayerStatus status, long sincePlaying) {
+    // sinceUserPause: ms since the user paused it through this app (see pausedHereAt), -1 if not.
+    private CarResume fetchCarState(String playerId, PlayerStatus status, long sincePlaying, long sinceUserPause) {
         try {
             if (null==rpc) {
                 rpc = new JsonRpc(getApplicationContext());
@@ -1523,6 +1646,10 @@ public class ControlService extends MediaBrowserServiceCompat {
             JSONObject track = null==loop ? null : loop.optJSONObject(0);
             if (null!=result) {
                 String mode = result.optString("mode");
+                if (!CarResume.wasPlaying(mode, sinceUserPause >= 0)) {
+                    Utils.debug("Not playing (" + mode + ", paused by the user " + (sinceUserPause / 1000) + " s ago)");
+                    return null;
+                }
                 if ("pause".equals(mode) && null!=status && playerId.equals(status.id) && status.isPlaying) {
                     // The pause was never pushed to us: when did it stop, from how far it played on?
                     long estimate = CarResume.sincePlayedOn(SystemClock.elapsedRealtime() - status.timestamp,
@@ -1545,6 +1672,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             Utils.debug("Failed to read the status: " + e.getMessage());
         }
         if (null==status || !playerId.equals(status.id) || status.trackId <= 0 || status.playlistIndex < 0 ||
+                !CarResume.wasPlaying(status.isPlaying ? "play" : status.mode, sinceUserPause >= 0) ||
                 !CarResume.wasPlaying(status.isPlaying ? "play" : status.mode, sincePlaying)) {
             return null;
         }
@@ -1810,6 +1938,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (!carConnected) {
             carConnected = true;
             updateMediaSession(); // hides Quit
+            handler.post(carStatusPoll);
         }
         long now = SystemClock.elapsedRealtime();
         if (0!=lastAutoConnect && now - lastAutoConnect < AUTO_CONNECT_DEBOUNCE_MS) {

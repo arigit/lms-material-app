@@ -32,6 +32,7 @@ public class PlayerStatus {
     public double playlistTimestamp = 0; // changes whenever the play queue is modified
     public boolean powered = true; // switched on, and connected to LMS
     public int shuffle = 0; // LMS shuffle mode: 0 off, 1 by song, 2 by album
+    public boolean pushed = false; // from a CometD push, not a status read
 
     @NonNull
     @Override
