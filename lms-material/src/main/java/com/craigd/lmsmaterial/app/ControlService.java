@@ -722,6 +722,7 @@ public class ControlService extends MediaBrowserServiceCompat {
 
     private void setBuffering() {
         if (null!=mediaSession) {
+            publishedKey = null; // the next status is published whatever it says
             mediaSession.setPlaybackState(playbackStateBuilder(
                     PlaybackStateCompat.STATE_BUFFERING, 0, 0f).build());
         }
@@ -829,6 +830,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         queueLoading = true;
+        Utils.debug("Loading the play queue (" + player + ", index " + current + ")");
         final int start = PlayQueue.windowStart(current, player.equals(queuePlayer) && timestamp == queueTimestamp ? queueTotal : Integer.MAX_VALUE);
         getBrowseExecutor().execute(() -> {
             List<MediaSessionCompat.QueueItem> items = null;
@@ -951,6 +953,13 @@ public class ControlService extends MediaBrowserServiceCompat {
         handler.post(this::updateMediaSession);
     }
 
+    // What was last published to the media session (see updateMediaSession).
+    private String publishedKey;
+    private long publishedPosition;
+    private long publishedAt;
+    private float publishedSpeed;
+    private static final long POSITION_DRIFT_MS = 2000;
+
     private void updateMediaSession() {
         if (null==mediaSession) {
             return;
@@ -958,6 +967,7 @@ public class ControlService extends MediaBrowserServiceCompat {
         configurePlaybackVolume();
         if (null==lastStatus || Utils.isEmpty(lastStatus.id) ||
                 !lastStatus.id.equals(MainActivity.activePlayer)) {
+            publishedKey = null;
             mediaSession.setPlaybackState(playbackStateBuilder(
                     PlaybackStateCompat.STATE_NONE, 0, 0f).build());
             String playerName = Utils.isEmpty(MainActivity.activePlayerName) ?
@@ -974,8 +984,8 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
         int state = "play".equals(lastStatus.mode) ? PlaybackStateCompat.STATE_PLAYING :
                 ("pause".equals(lastStatus.mode) ? PlaybackStateCompat.STATE_PAUSED : PlaybackStateCompat.STATE_STOPPED);
-        mediaSession.setPlaybackState(playbackStateBuilder(state, displayTime(lastStatus),
-                PlaybackStateCompat.STATE_PLAYING==state ? 1.0f : 0f).build());
+        PlaybackStateCompat playbackState = playbackStateBuilder(state, displayTime(lastStatus),
+                PlaybackStateCompat.STATE_PLAYING==state ? 1.0f : 0f).build();
 
         String coverUrl = lastStatus.cover;
         boolean coverChanged = (null==coverUrl && null!=currentCoverUrl) ||
@@ -1015,7 +1025,33 @@ public class ControlService extends MediaBrowserServiceCompat {
         Bitmap artwork = null==currentCoverBitmap ? getFallback() : currentCoverBitmap;
         meta.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artwork)
                 .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artwork);
+
+        // Android Auto redraws Now Playing and its queue list (back at the top) on every update, and the status
+        // is read every few seconds now: only publish what changed, or a position that has drifted.
+        String key = sessionKey(playbackState) + "|" + lastStatus.title + "|" + artist + "|" + lastStatus.album + "|" +
+                lastStatus.duration + "|" + System.identityHashCode(artwork);
+        long now = SystemClock.elapsedRealtime();
+        long expected = publishedPosition + (long) ((now - publishedAt) * publishedSpeed);
+        if (key.equals(publishedKey) && Math.abs(playbackState.getPosition() - expected) < POSITION_DRIFT_MS) {
+            return;
+        }
+        publishedKey = key;
+        publishedPosition = playbackState.getPosition();
+        publishedSpeed = playbackState.getPlaybackSpeed();
+        publishedAt = now;
+        mediaSession.setPlaybackState(playbackState);
         mediaSession.setMetadata(meta.build());
+    }
+
+    private static String sessionKey(PlaybackStateCompat state) {
+        StringBuilder key = new StringBuilder();
+        key.append(state.getState()).append('|').append(state.getActiveQueueItemId()).append('|').append(state.getActions());
+        if (null!=state.getCustomActions()) {
+            for (PlaybackStateCompat.CustomAction action : state.getCustomActions()) {
+                key.append('|').append(action.getAction()).append(':').append(action.getName()).append(':').append(action.getIcon());
+            }
+        }
+        return key.toString();
     }
 
     private synchronized Bitmap getFallback() {
