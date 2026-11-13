@@ -207,6 +207,14 @@ public class ControlService extends MediaBrowserServiceCompat {
     private volatile long mediaKeyAt;
     private volatile int mediaKeyCode;
     private static final long MEDIA_KEY_DISPATCH_MS = 1000;
+    // A pause sent through this app's media session (Android Auto's screen, a media key, the notification), and
+    // whether it came as a media key; cleared once the player plays again. Tells a pause by the user from the car's
+    // own pause at switch-off (a media key just before the disconnect, or the player app losing audio focus).
+    private long pausedHereAt;
+    private boolean pausedHereByKey;
+    private String pausedHerePlayer;
+    // A media key pause this long before the disconnect was the user's (the car's comes ~0.1 s before it).
+    private static final long KEY_PAUSE_BEFORE_DISCONNECT_MS = 5000;
     // Status re-reads that don't rely on CometD pushes. Right after a resume LMS reports a position extrapolated
     // over the pause (from the player's last status before it), up to the end of the track, and doesn't always
     // push the correction; and a track change push can be missed. So: re-read after a resume, while the position
@@ -588,7 +596,17 @@ public class ControlService extends MediaBrowserServiceCompat {
 
                 @Override
                 public void onPause() {
-                    Utils.debug("from " + controllerName());
+                    boolean key = fromMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                            KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_STOP);
+                    Utils.debug("from " + controllerName() + (key ? " (media key)" : ""));
+                    // Keep the first pause until the player plays again: the car's own pause at switch-off must
+                    // not replace the user's earlier one.
+                    if (0==pausedHereAt || !Utils.isEmpty(MainActivity.activePlayer) &&
+                            !MainActivity.activePlayer.equals(pausedHerePlayer)) {
+                        pausedHereAt = SystemClock.elapsedRealtime();
+                        pausedHereByKey = key;
+                        pausedHerePlayer = MainActivity.activePlayer;
+                    }
                     cancelPendingPlay("paused");
                     sendCommand(PAUSE_COMMAND);
                 }
@@ -924,7 +942,13 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
         lastStatus = status;
         checkResumePosition(status);
-        handler.post(() -> scheduleStatusChecks(status));
+        handler.post(() -> {
+            if (null!=status && status.isPlaying && 0!=pausedHereAt && status.id.equals(pausedHerePlayer) &&
+                    SystemClock.elapsedRealtime() - pausedHereAt > 3000) {
+                pausedHereAt = 0; // playing again
+            }
+            scheduleStatusChecks(status);
+        });
         handler.post(() -> carResumeStatus(status));
         handler.post(this::updateNotification);
         handler.post(this::updateMediaSession);
@@ -1627,9 +1651,12 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         PlayerStatus status = lastStatus;
-        long sincePlaying = playerId.equals(playingPlayer) ? SystemClock.elapsedRealtime() - playingSeenAt : -1;
+        long now = SystemClock.elapsedRealtime();
+        long sincePlaying = playerId.equals(playingPlayer) ? now - playingSeenAt : -1;
+        long sinceUserPause = 0!=pausedHereAt && playerId.equals(pausedHerePlayer) &&
+                (!pausedHereByKey || now - pausedHereAt >= KEY_PAUSE_BEFORE_DISCONNECT_MS) ? now - pausedHereAt : -1;
         getBrowseExecutor().execute(() -> {
-            CarResume state = fetchCarState(playerId, status, sincePlaying);
+            CarResume state = fetchCarState(playerId, status, sincePlaying, sinceUserPause);
             Utils.debug("Saving car state: " + state);
             if (null==state) {
                 prefs.edit().remove(CAR_RESUME_STATE_PREF_KEY).apply();
@@ -1642,7 +1669,8 @@ public class ControlService extends MediaBrowserServiceCompat {
     // The player's current track and position, from LMS, or from the last status if LMS can't be reached; null if
     // it wasn't playing (CarResume.wasPlaying; sincePlaying: ms since it was last seen playing, -1 if not).
     // Called on the browse executor.
-    private CarResume fetchCarState(String playerId, PlayerStatus status, long sincePlaying) {
+    // sinceUserPause: ms since the user paused it through this app (see pausedHereAt), -1 if not.
+    private CarResume fetchCarState(String playerId, PlayerStatus status, long sincePlaying, long sinceUserPause) {
         try {
             if (null==rpc) {
                 rpc = new JsonRpc(getApplicationContext());
@@ -1653,6 +1681,10 @@ public class ControlService extends MediaBrowserServiceCompat {
             JSONObject track = null==loop ? null : loop.optJSONObject(0);
             if (null!=result) {
                 String mode = result.optString("mode");
+                if (!CarResume.wasPlaying(mode, sinceUserPause >= 0)) {
+                    Utils.debug("Not playing (" + mode + ", paused by the user " + (sinceUserPause / 1000) + " s ago)");
+                    return null;
+                }
                 if ("pause".equals(mode) && null!=status && playerId.equals(status.id) && status.isPlaying) {
                     // The pause was never pushed to us: when did it stop, from how far it played on?
                     long estimate = CarResume.sincePlayedOn(SystemClock.elapsedRealtime() - status.timestamp,
@@ -1675,6 +1707,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             Utils.debug("Failed to read the status: " + e.getMessage());
         }
         if (null==status || !playerId.equals(status.id) || status.trackId <= 0 || status.playlistIndex < 0 ||
+                !CarResume.wasPlaying(status.isPlaying ? "play" : status.mode, sinceUserPause >= 0) ||
                 !CarResume.wasPlaying(status.isPlaying ? "play" : status.mode, sincePlaying)) {
             return null;
         }
