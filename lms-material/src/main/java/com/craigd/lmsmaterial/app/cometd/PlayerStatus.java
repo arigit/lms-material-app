@@ -31,6 +31,7 @@ public class PlayerStatus {
     public int playlistIndex = -1; // index of current track in the play queue, -1 if unknown/empty
     public double playlistTimestamp = 0; // changes whenever the play queue is modified
     public boolean powered = true; // switched on, and connected to LMS
+    public boolean pushed = false; // from a CometD push, not a status read
 
     @NonNull
     @Override

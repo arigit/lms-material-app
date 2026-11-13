@@ -17,6 +17,7 @@ import org.cometd.client.transport.ClientTransport;
 import org.cometd.common.HashMapMessage;
 
 import java.io.IOException;
+import java.util.concurrent.TimeoutException;
 import java.util.List;
 
 public class SlimClient extends BayeuxClient {
@@ -54,7 +55,10 @@ public class SlimClient extends BayeuxClient {
             Utils.error(message.getJSON(), failure);
         }
         // Not once disconnected: the old client's dropped request fails after a reconnect replaced it.
-        if (failure instanceof IOException && connectionState.isConnected() && !isDisconnected()) {
+        // A timeout too: the transport refuses a second /meta/connect, so after a failed long-poll nothing but a
+        // new handshake gets the client going again.
+        if ((failure instanceof IOException || failure instanceof TimeoutException) &&
+                connectionState.isConnected() && !isDisconnected()) {
             rehandshake();
         }
     }
