@@ -85,6 +85,14 @@ public class CarResume {
         return sinceStatus - playedOn;
     }
 
+    /**
+     * False if the user paused the player (through this app) and it is still paused: the car's own pause at
+     * switch-off doesn't count as the user's, so only this rules it out.
+     */
+    public static boolean wasPlaying(String mode, boolean pausedByUser) {
+        return "play".equals(mode) || !pausedByUser;
+    }
+
     public static boolean wasPlaying(String mode, long sincePlaying) {
         if ("play".equals(mode)) {
             return true;

@@ -84,4 +84,15 @@ public class CarResumeTest {
         assertEquals(200000, CarResume.sincePlayedOn(200000, 3, 0, 300000, 3, 250000));
         assertEquals(200000, CarResume.sincePlayedOn(200000, 3, 1000, 0, 4, 50000));
     }
+
+    @Test
+    public void pausedByTheUserIsNotPlaying() {
+        // Paused on the car's screen, then the car switched off: no resume.
+        assertFalse(CarResume.wasPlaying("pause", true));
+        assertFalse(CarResume.wasPlaying("stop", true));
+        // Played again since (LMS says play): resume.
+        assertTrue(CarResume.wasPlaying("play", true));
+        // Only the car paused it: left to the time rule.
+        assertTrue(CarResume.wasPlaying("pause", false));
+    }
 }
