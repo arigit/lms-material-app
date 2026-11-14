@@ -78,6 +78,6 @@ jobs:
           player=$(ls squeezelite-ar-*.apk)
           players=https://github.com/arigit/squeezelite/releases
           gh release create "$TAG" "$apk" "$player" --title "lms-material-app (ar) $version" \
-            --notes "lms-material-app (ar) $version (shown on the phone as Lyrion (ar)). Install both APKs: $apk and its player $player (the latest Squeezelite (ar) release, from $players) - see the README for setup.
+            --notes "lms-material-app (ar) $version (shown on the phone as Lyrion (ar)). Install both APKs: $apk and its player $player (the latest Squeezelite (ar) release, from $players) - see $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/master/Android-Auto-Readme.md for setup.
 
           Its player at the time: [Squeezelite (ar) ${ptag#v}]($players/tag/$ptag). Newest Squeezelite (ar): $players/latest"
