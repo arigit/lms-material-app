@@ -1,11 +1,11 @@
-<p align="center">
-  <img center width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/dc00ab9c-2cbb-4f2a-b6f5-37423f64078a" />
-</p>
-
 # Android Auto support in LMS-Material-App - a client for Lyrion Music Server
 The goal of this reference guide is to help you get an LMS client running in android as a "music player", playing music in the phone itself and -when connected to your car via Android Auto- in the car itself.
 
 This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone.
+
+<p align="center">
+  <img center width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/dc00ab9c-2cbb-4f2a-b6f5-37423f64078a" />
+</p>
 
 <p align="center">
 <img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/bef58d6a-b661-4a83-9649-3c617b2390d3" />
