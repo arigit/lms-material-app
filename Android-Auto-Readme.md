@@ -78,51 +78,69 @@ There are three points of configuration needed:
   - LMS Server Settings (Player Section)
 
 ### Settings in Lyrion App 
+In the App Settings section enter the **Application** settings page
 - Player App: `Squeezelite`
 - Change device volume: `ON`
 - Auto-start player: `ON`
-- Add menu entry to start player: ON
-- Stop player when Quit: OFF
+- Add menu entry to start player: `ON`
+- Stop player when Quit: `OFF`
 - Android Auto:
   - Tab Order:
     - the first tab in the list will be shown first each time; I use: Albums
-  - When an album is selected: show tracks
-  - Ignore the car's play on connect: ON
-  - Resume after reconnecting: ON
+  - When an album is selected: `show tracks`
+  - Ignore the car's play on connect: `ON`
+  - Resume after reconnecting: `ON`
 - Default Player:
   - Set this to the player name you chose in the squeezelite app config
-- Only Control Default: ON
+- Only Control Default: `ON`
 
 ### Settings in squeezelite-app (Squeezelite app in the phone)
 - Name:
-  - set to any name e.g. `My Phone`; choose a name without apostrophes "'"
-- Volume control: Synchronized
-- Bit-rate limit: Server setting
-  - 
-- Buffer size: 64MB (+46MB next-track buffer)
-- Restore Volume: OFF
-- Stop on Power Off: ON
-- Use Audio Focus: ON
-- Use ID and Name: OFF
-- Send Track Details: OFF (otherwise, in-car a second active player shows in android auto besides lms-material, creating confusion)
-- Auto-start when device connects: None
-- Start player when android auto connects: OFF (lms-app will manage start/stop in-car)
-- Stop player on disconnect: OFF
+  - set to any name e.g. `My Phone`; choose a name without apostrophes `'`
+- Volume control: `Synchronized`
+- Bit-rate limit: `Use server setting`
+  - The recommended settings will stream the track as-is in the server to your phone; if your collection has hi-resolution lossless content, some (cellular) networks may be unable to provide the required throughput. If that happens you will get audio-cuts, if so then change this setting to e.g `192 kbps`; that will cause your server to transcode the content to mp3 and stream it at a far lower bitrate. You may also want to do this if your cellular service has a low volumetric quota (e.g. 10GB / month)
+- Apply bit rate limit: `When on cellular or metered network`
+- Buffer size: `Current + next song in full (dynamic buffer)`
+  - Maximum size for Current Song and Next Song buffers: `256 MB`
+  - These two settings will help you achieve audio-cut-free streaming during a drive that may traverse short periods of poor cellular coverage.
+- Start player when launched: `ON`
+- Restore Volume: `OFF`
+- Stop on Power Off: `ON`
+- Use Audio Focus: `ON`
+- Keep device awake: `OFF`
+
+- Use ID and Name: `OFF`
+- Send Track Details: `OFF`
+  - otherwise, in-car, a second active player app (Squeezelite App) shows in android auto besides Lyrion App, creating confusion
+- Auto-start when device connects: `None`
+- Start player when android auto connects: `OFF`
+  - (Lyrion app will manage start/stop of Squeezelite App while in-car)
+- Stop player on disconnect: `OFF`
 - Android Auto:
-  - Pause on android auto disconnect: OFF
+  - Pause on android auto disconnect: `ON`
+  - Pause player when android auto connects: `OFF`
 
 
 ### Settings in your Lyrion LMS Server, Player Section
-To inspect the server-side config, for your phone player, you can use a desktop web browser to access the web UI of your server, or you can use your phone and the lms-material-app after setting: "Only control default": OFF  (put it back ON after configuring the below)
+To review and set the server-side config, for your phone player, you can use a desktop web browser to access the web UI of your server, or you can use your phone and the Lyrion App.
 
-Select your Phone's player name and: scroll to the bottom of the config page and select "Extra Settings"
+In the App Settings section enter the **Player** settings page, then if prompted to select a player (which could happen if you didn't yet set **Only control Default** to `ON`), select your phone's Squeezelite player **Name** (e.g. `My Phone`)
 
-- Audio
-  - Power On Resume: Stop at power off / Remain stopped at power on
-  - Volume Control: volume control adjusts outputs
-  - Bitrate limiting: No limit (here you can force the server to transcode to mp3 if your cellular network doesn't offer enough bandwidth)
-  - Volume Adjustment / replay gain: Smart Gain (only acts if your tracks are tagged with Replay Gain, which is useful specially when shuffling tracks from different albums)
+Then scroll to the bottom of the player settings page and tap **Extra Settings**
+
+- **Audio** section
+  - Power On Resume: `Stop at power off / Remain stopped at power on`
+  - Volume Control: `Volume control adjusts outputs`
+  - Bitrate limiting: `No limit`
+    - this setting can be overridden by the Squeezelite App in the phone if transcoding is needed, so it's saffe to leave as `No limit`
+  - Volume Adjustment / Replay Gain: Smart Gain
+    - this setting only acts if your tracks are tagged with Replay Gain values, which is useful specially when shuffling tracks from different albums in a playlist
     
-- Player Power-On Volume
-  - Set last value: Disabled
+- **Player Volume Settings** section
+  - Player Power-On Volume
+    - Set last value: `Disabled`
+- **Power Save** section
+  - Enable Power Save: `OFF`
+
     
