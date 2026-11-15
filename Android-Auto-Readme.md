@@ -36,10 +36,10 @@ Your smartphone will also need connectivity to your LMS server so that the Lyrio
 
 ### LMS requirements
 
-Nothing special is required in your LMS server (other than following this setup guide); that said, the Lyrion App will seamlessly expose support for track Rating (in-car, in the Now Playing screen) and will show you a browse item called "Rediscover Albums" if either of the following LMS plugins is installed in your server:
+Nothing special is required in your LMS server (other than following this setup guide); that said, the Lyrion App will seamlessly expose support for track Rating (in-car, in the `Now Playing` screen) and will show you a browse item called **Rediscover Albums** if either of the following LMS plugins is installed in your server:
 
-  - Ratings Light
-  - Rediscover Releases
+  - `Ratings Light`
+  - `Rediscover Releases`
 
 Both of which can be found as 3rd Party Plugins under "Manage Plugins" in your install
 
@@ -91,10 +91,10 @@ In the App Settings section enter the **Application** settings page
   - Ignore the car's play on connect: `ON`
   - Resume after reconnecting: `ON`
 - Default Player:
-  - Set this to the player name you chose in the squeezelite app config
+  - Set this to the player name you chose in the Squeezelite app config
 - Only Control Default: `ON`
 
-### Settings in squeezelite-app (Squeezelite app in the phone)
+### Settings in Squeezelite App
 - Name:
   - set to any name e.g. `My Phone`; choose a name without apostrophes `'`
 - Volume control: `Synchronized`
