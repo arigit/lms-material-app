@@ -7,6 +7,15 @@ The goal of this reference guide is to help you get an LMS client running in and
 
 This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone, e.g. it can control your server remotely and play . For those, refer to the app documentation.
 
+<p align="center">
+<img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/bef58d6a-b661-4a83-9649-3c617b2390d3" />
+</p>
+
+<p align="center">
+<img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/97cb691e-77d5-4865-8b24-749e56c10213" />
+</p>
+
+
 
 ## Requirements
 Two apps are required, both can be found in https://f-droid.org/
@@ -16,40 +25,32 @@ Two apps are required, both can be found in https://f-droid.org/
 You will need at least version 0.11 for android auto to work. 
 Once installed, the LMS-Material-App shows as "Lyrion" in your phone's app list; so we will call it "Lyrion App" for short. 
 
+### VPN Tunneling
+
 Your smartphone will also need connectivity to your LMS server so that the Lyrion App can connect to it and get your music streamed to your phone while away from home. The simplest and most secure way to do this is a light VPN solution; the setup for this is out of scope of this guide but here are two pointers:
 
-  - the simplest and most reliable way I have found is Tailscale (https://tailscale.com/), install the client in your home server (linux, mac, what
+  - the simplest, most reliable VPN I have found is Tailscale (https://tailscale.com/), install the client in your home-server that is running LMS (linux, mac, etc all supported; I use tailscale's docker container), then add your home-server to your "tailnet", install the client in your phone, add your phone to your tailnet, done. Turn tailscale ON in your phone and forget about it. Your phone will always be able to connect to your home-server and it's apps (e.g. LMS, Home Assistant, etc) all the time regardless of how you connect to the internet: over cellular, over WiFi at work, and at home; tailscale is smart and when possible it routes all traffic peer to peer. It just works, all the time. It uses wireguard under the hood that is very light. You can select if you want to funnel on the VPN tunnel all your internet traffic or just the traffic to your home-server.
+
+  - your router / access point solution may include VPN support. For example, mid-range ASUS routers include support for various VPN flavors. The lightest is wireguard, it's almost trivial to pair your phone with your router via a QR code your router's GUI will display. This solution will funnel all of the internet traffic of your phone to your home router, which will allow your phone to reach your LMS server.
+
+### LMS requirements
+
+Nothing special is required in your LMS server (other than following this setup guide); that said, the Lyrion App will seamlessly expose support for track Rating (in-car, in the Now Playing screen) and will show you a browse item called "Rediscover Albums" if either of the following LMS plugins is installed in your server:
+
+  - Ratings Light
+  - Rediscover Releases
+
+Both of which can be found as 3rd Party Plugins under "Manage Plugins" in your install
 
 
-
-It includes a fully-featured android-auto (in-car) interface, this is the key difference with the excellent [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app). It builds upon the great work done by [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto) but changes the focus of the Android Auto support from 
-"in-car server" to remote (in-home) server streaming, that would be your Lyrion server at home, with your phone reaching it over cellular + VPN / Tailscale.
-
-**The only purpose of this fork is to add android-auto support to upstream lms-material-app and squeezelite-app. I will do my best to keep up with new upstream releases until a PR for this functionality is accepted** which could take a long time given the amount of changes.
-
-Modifications to the upstream lms-material and squeezelite android apps run a bit deep as I found with them, almost invariably, after connecting the phone to the car and accessing the LMS-material app UI, Playback attempts failed for different reasons, typically related to squeezelite not running, or running but not started, or the wrong player got auto-selected for playback (so the kitchen speaker would start playing music shortly after turning on the car :), or wrong library view etc. Extensive changes done to ensure the primary phone-centric use case "just works" when you get in the car and hit Play or when auto-resume engages.
-
-Changes were needed in squeezelite, the largest is related to buffering: larger buffer options and "next song" buffering are now supported. This is meant to avoid audio drops and stutter due to cellular coverage gaps; I tested this extensively during long commutes, streaming 24/96 and 24/192 original FLAC music with excellent results. It is also possible to setup squeezelite to have server-side mp3 transcoding but I haven't tested that.
-
-The development of this fork has been done entirely with Claude Code. I made all the decisions, all the in-car testing and a lot of debugging, but all of the code development and the changes are entirely AI. 
-
-I hope that the changes can be merged back to the original repo ([CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app) and this repo eventually shelved. 
-
-
-## Key New Features
-This fork builds on the work done by upstream adding:
+## Key Features of this setup
 
 - optimized for **in-car playback of a remote music collection**: your music stays on your Lyrion Music Server at home, and the phone streams it to the car through Android Auto over cellular
-<p align="center">
-<img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/bef58d6a-b661-4a83-9649-3c617b2390d3" />
-</p>
 
-- tries to provide a 'just works' solution for LMS users: with the right settings in place (see recommendation below) it will ensure your local player (squeezelite) is running and enabled so when you hit Play, it just works; options are provided to auto-resume queue playback upon car connection and to work around unwanted playback requested sent by cars
+- tries to provide a 'just works' solution for LMS users: with the right settings in place (see recommendation below) it will ensure your local player (squeezelite) is running and enabled so when you hit Play, so that playback 'just works'; options are provided to auto-resume queue playback upon car connection and to work around unwanted playback requested sent by cars
 
 - it supports in-car queue display and basic management (add to queue, display queue)
-<p align="center">
-<img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/97cb691e-77d5-4865-8b24-749e56c10213" />
-</p>
+
 - it supports and exposes shuffle mode in the car UI
 
 - it exposes track ratings and allows setting of ratings in the car UI / Now Playing screen (this will only display if you have the ratings-light LMS plugin installed in your server)
