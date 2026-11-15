@@ -116,12 +116,3 @@ Select your Phone's player name and: scroll to the bottom of the config page and
 - Player Power-On Volume
   - Set last value: Disabled
     
-
-# Donations
-
-Please donate to the current app author: https://github.com/CDrummond/lms-material-app
-
-# Licenses
-
-This app is provided under the [MIT License](LICENSE).
-
