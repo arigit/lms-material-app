@@ -2,8 +2,25 @@
   <img center width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/dc00ab9c-2cbb-4f2a-b6f5-37423f64078a" />
 </p>
 
-# Introduction to this fork
-This is an Android-app that can act as a controller of a Lyrion Music Server (LMS), allowing you to play audio on any player connected to the LMS server; it can also be setup as a phone-centric music player used to browse and play content in your phone, when used in combination with the [squeezelite](https://github.com/arigit/squeezelite) app that needs to be installed in the phone as well for local (in-phone) playback.
+# Android Auto support in LMS-Material-App - a client for Lyrion Music Server
+The goal of this reference guide is to help you get an LMS client running in android as a "music player", playing music in the phone itself and in your car, when connected to your car via Android Auto.
+
+This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone, e.g. it can control your server remotely and play . For those, refer to the app documentation.
+
+
+## Requirements
+Two apps are required, both can be found in https://f-droid.org/
+- https://f-droid.org/en/packages/org.lyrion.squeezelite/
+- https://f-droid.org/en/packages/com.craigd.lmsmaterial.app/
+
+You will need at least version 0.11 for android auto to work. 
+Once installed, the LMS-Material-App shows as "Lyrion" in your phone's app list; so we will call it "Lyrion App" for short. 
+
+Your smartphone will also need connectivity to your LMS server so that the Lyrion App can connect to it and get your music streamed to your phone while away from home. The simplest and most secure way to do this is a light VPN solution; the setup for this is out of scope of this guide but here are two pointers:
+
+  - the simplest and most reliable way I have found is Tailscale (https://tailscale.com/), install the client in your home server (linux, mac, what
+
+
 
 It includes a fully-featured android-auto (in-car) interface, this is the key difference with the excellent [CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app). It builds upon the great work done by [chrober/lms-material-app](https://github.com/chrober/lms-material-app/tree/feature/android-auto) but changes the focus of the Android Auto support from 
 "in-car server" to remote (in-home) server streaming, that would be your Lyrion server at home, with your phone reaching it over cellular + VPN / Tailscale.
@@ -18,14 +35,6 @@ The development of this fork has been done entirely with Claude Code. I made all
 
 I hope that the changes can be merged back to the original repo ([CDrummond/lms-material-app](https://github.com/CDrummond/lms-material-app) and this repo eventually shelved. 
 
-
-## Requirements
-Two apps are required, pick the latest releases of both:
-- https://github.com/arigit/squeezelite/releases
-- https://github.com/arigit/lms-material-app/releases
-
-The APKs need a recent android platform and need to be side-loaded.
-These apps can be installed in parallel with the upstream versions.
 
 ## Key New Features
 This fork builds on the work done by upstream adding:
