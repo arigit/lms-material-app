@@ -132,37 +132,56 @@ final class PlayerAvailability {
         }
     }
 
-    // Whether a player (null if LMS doesn't list it) runs on this device: by its IP, or, if a player app is set, by
-    // the ID of the player last seen at this device's IP (see rememberLocalPlayer). Away from home LMS can see the
-    // phone at another address (e.g. a VPN gateway's), so the IP alone doesn't tell. The default player is not
-    // assumed to be local: it can be a player elsewhere.
-    static boolean isLocalPlayer(Player player, String playerId, Set<String> localAddresses, String localPlayerId,
+    // Whether a player runs on this device: by its IP, or, if a player app is set, by the ID of the player last seen
+    // at this device's IP (see rememberLocalPlayer). Away from home LMS can see the phone at another address (e.g. a
+    // VPN gateway's), so the IP alone doesn't tell. The default player is not assumed to be local: it can be a player
+    // elsewhere. Several players at this device's address (e.g. two player apps installed), connected or not, are
+    // ambiguous: then only the remembered player is this device's.
+    static boolean isLocalPlayer(List<Player> players, String playerId, Set<String> localAddresses, String localPlayerId,
                                  boolean hasPlayerApp) {
-        if (player != null && localAddresses != null && localAddresses.contains(player.ip)) {
-            return true;
+        if (playerId == null || playerId.isEmpty()) {
+            return false;
         }
-        return hasPlayerApp && localPlayerId != null && !localPlayerId.isEmpty() && localPlayerId.equals(playerId);
+        boolean remembered = localPlayerId != null && localPlayerId.equals(playerId);
+        Player player = findPlayer(players, playerId);
+        if (player != null && localAddresses != null && localAddresses.contains(player.ip)) {
+            return remembered || playersAt(players, localAddresses, false).size() == 1;
+        }
+        return hasPlayerApp && remembered;
+    }
+
+    // Whether LMS lists a player matching restricted (the default player's ID or name), connected or not.
+    static Player findAllowedPlayer(List<Player> players, String restricted) {
+        if (players == null || restricted == null) {
+            return null;
+        }
+        for (Player player : players) {
+            if (isAllowed(restricted, player.id, player.name)) {
+                return player;
+            }
+        }
+        return null;
     }
 
     // A connected player running on this device: by IP, else (see isLocalPlayer) the player last seen at its IP.
-    // Several players at this device's address (e.g. two player apps installed and running) are ambiguous: then
-    // only the remembered player is taken, if it is one of them.
+    // Several players at this device's address (e.g. two player apps installed), connected or not, are ambiguous:
+    // then only the remembered player is taken, if it is one of them.
     static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses, String localPlayerId,
                                            boolean hasPlayerApp) {
-        List<Player> byIp = connectedPlayersAt(players, localAddresses);
-        if (byIp.size() == 1) {
-            return byIp.get(0);
-        }
+        List<Player> atIp = playersAt(players, localAddresses, false);
         boolean remembered = localPlayerId != null && !localPlayerId.isEmpty();
-        if (byIp.size() > 1) {
+        if (atIp.size() > 1) {
             if (remembered) {
-                for (Player p : byIp) {
-                    if (localPlayerId.equals(p.id)) {
+                for (Player p : atIp) {
+                    if (p.connected && localPlayerId.equals(p.id)) {
                         return p;
                     }
                 }
             }
             return null;
+        }
+        if (atIp.size() == 1 && atIp.get(0).connected) {
+            return atIp.get(0);
         }
         if (players == null || !hasPlayerApp || !remembered) {
             return null;
@@ -175,19 +194,20 @@ final class PlayerAvailability {
         return null;
     }
 
-    // The connected player running on this device, e.g. the Squeezelite app, by IP; null if none or several.
+    // The connected player running on this device, e.g. the Squeezelite app, by IP; null if none, or if LMS lists
+    // several players at this device's address (connected or not).
     static Player findConnectedLocalPlayer(List<Player> players, Set<String> localAddresses) {
-        List<Player> byIp = connectedPlayersAt(players, localAddresses);
-        return byIp.size() == 1 ? byIp.get(0) : null;
+        List<Player> atIp = playersAt(players, localAddresses, false);
+        return atIp.size() == 1 && atIp.get(0).connected ? atIp.get(0) : null;
     }
 
-    private static List<Player> connectedPlayersAt(List<Player> players, Set<String> addresses) {
+    private static List<Player> playersAt(List<Player> players, Set<String> addresses, boolean connectedOnly) {
         List<Player> found = new ArrayList<>();
         if (players == null || addresses == null) {
             return found;
         }
         for (Player player : players) {
-            if (player.connected && addresses.contains(player.ip)) {
+            if ((player.connected || !connectedOnly) && addresses.contains(player.ip)) {
                 found.add(player);
             }
         }

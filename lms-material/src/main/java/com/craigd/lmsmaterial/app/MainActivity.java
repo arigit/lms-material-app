@@ -841,10 +841,9 @@ public class MainActivity extends AppCompatActivity {
             sharedPreferences.edit().putString(CURRENT_PLAYER_ID_KEY, playerId).apply();
         }
 
+        // Not remembered as this phone's player here (PlayerAvailability.rememberLocalPlayer): with two player apps
+        // both are at this phone's address. ControlService learns it from LMS's player list when it's unambiguous.
         boolean local = isLocalPlayer(ip);
-        if (local) {
-            PlayerAvailability.rememberLocalPlayer(sharedPreferences, playerId);
-        }
         interceptVolume = !sharedPreferences.getBoolean(SettingsActivity.HARDWARE_VOLUME_PREF_KEY, true) || !local;
         Utils.debug("interceptVolume:"+interceptVolume);
         sendMessageToService(ControlService.ACTIVE_PLAYER, new String[]{activePlayer, activePlayerName});

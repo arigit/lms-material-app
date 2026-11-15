@@ -81,7 +81,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class ControlService extends MediaBrowserServiceCompat {
     public static final String NO_NOTIFICATION = "none";
@@ -196,9 +195,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     private Runnable playAfterStart;
     private int playerRestarts;
     private long nextPlayerRestart;
-    // Each play that may wait (for the LMS query, or the player app to start) gets the next number; Pause, a
-    // newer play or another player being selected moves it on, so a waiting play that is no longer wanted is dropped.
-    private final AtomicInteger playRequest = new AtomicInteger();
+    // Plays that may wait (see PlayRequests): numbered and given their player on the main thread as they arrive,
+    // and checked again on the main thread just before they are sent.
+    private final PlayRequests playRequests = new PlayRequests();
     // The player ID this service last saved as selected: the prefs listener's activePlayerChanged() is for
     // selections made elsewhere, and would cancel the start or play this selection is part of. Main thread only.
     private String selectedHere;
@@ -650,15 +649,21 @@ public class ControlService extends MediaBrowserServiceCompat {
                     if (LmsBrowseHelper.isQueueAdd(mediaId)) {
                         // Adding counts as playing (with "Only control default" the player is switched on, or
                         // its app started, first), as adding to an empty queue starts playback.
-                        getBrowseExecutor().execute(() -> switchOnForPlay(() ->
+                        PlayRequests.Request request = newPlayRequest();
+                        // Checked on the main thread, then added on the browse executor (it reads the queue first).
+                        getBrowseExecutor().execute(() -> switchOnForPlay(request, () -> getBrowseExecutor().execute(() -> {
+                            if (playRequests.isWanted(request, MainActivity.activePlayer)) {
                                 handler.post(getBrowseHelper().addToQueue(mediaId)
-                                        ? ControlService.this::playbackRequested : commandStatusRefresh)));
+                                        ? ControlService.this::playbackRequested : commandStatusRefresh);
+                            }
+                        })));
                         return;
                     }
                     clearCarResume("played from browse");
-                    getBrowseExecutor().execute(() -> switchOnForPlay(() -> {
+                    PlayRequests.Request request = newPlayRequest();
+                    getBrowseExecutor().execute(() -> switchOnForPlay(request, () -> {
                         if (getBrowseHelper().playMediaId(mediaId)) {
-                            handler.post(ControlService.this::playbackRequested);
+                            playbackRequested();
                         }
                     }));
                 }
@@ -671,15 +676,20 @@ public class ControlService extends MediaBrowserServiceCompat {
                         return;
                     }
                     clearCarResume("played from search");
-                    getBrowseExecutor().execute(() -> switchOnForPlay(() -> {
-                        for (MediaBrowserCompat.MediaItem item : getBrowseHelper().search(query)) {
-                            if (item.isPlayable() && getBrowseHelper().playMediaId(item.getMediaId())) {
-                                handler.post(ControlService.this::playbackRequested);
-                                return;
+                    PlayRequests.Request request = newPlayRequest();
+                    getBrowseExecutor().execute(() -> {
+                        // Searched first: a Pause during a slow search still stops the play.
+                        List<MediaBrowserCompat.MediaItem> results = getBrowseHelper().search(query);
+                        switchOnForPlay(request, () -> {
+                            for (MediaBrowserCompat.MediaItem item : results) {
+                                if (item.isPlayable() && getBrowseHelper().playMediaId(item.getMediaId())) {
+                                    playbackRequested();
+                                    return;
+                                }
                             }
-                        }
-                        Utils.debug("No playable search result for: " + query);
-                    }));
+                            Utils.debug("No playable search result for: " + query);
+                        });
+                    });
                 }
 
                 @Override
@@ -1372,22 +1382,29 @@ public class ControlService extends MediaBrowserServiceCompat {
 
     // A play waiting for the player is no longer wanted. Main thread only.
     private void cancelPendingPlay(String reason) {
-        playRequest.incrementAndGet();
+        playRequests.cancel();
         if (null!=playAfterStart) {
             Utils.debug("Dropping the play waiting for the player: " + reason);
             playAfterStart = null;
         }
     }
 
-    // Runs play only if no Pause, newer play or other player selection came since it was requested.
-    private Runnable guardPlay(int request, String playerId, Runnable play) {
-        return () -> {
-            if (request!=playRequest.get() || !Objects.equals(playerId, MainActivity.activePlayer)) {
-                Utils.debug("Dropping play requested for " + playerId + ": paused, replaced or another player selected");
+    // A new play for the active player, taken when it arrives. Main thread only.
+    private PlayRequests.Request newPlayRequest() {
+        return playRequests.next(MainActivity.activePlayer);
+    }
+
+    // Runs play on the main thread, only if no Pause, newer play or other player selection came since it was
+    // requested. Pause and player selections run on the main thread too, so none can come between this check and
+    // the command play sends. Can be run on any thread.
+    private Runnable guardPlay(PlayRequests.Request request, Runnable play) {
+        return () -> handler.post(() -> {
+            if (!playRequests.isWanted(request, MainActivity.activePlayer)) {
+                Utils.debug("Dropping play requested for " + request.playerId + ": paused, replaced or another player selected");
                 return;
             }
             play.run();
-        };
+        });
     }
 
     private void checkPlayerAvailability() {
@@ -1397,26 +1414,16 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         getBrowseExecutor().execute(() -> {
-            PlayerAvailability.Player player = null;
-            try {
-                if (null==rpc) {
-                    rpc = new JsonRpc(getApplicationContext());
-                }
-                JSONObject response = rpc.sendMessageSync("", new String[]{"players", "0", "100"}, 3000);
-                JSONObject result = null==response ? null : response.optJSONObject("result");
-                JSONArray players = null==result ? null : result.optJSONArray("players_loop");
-                player = null==restricted
-                        ? PlayerAvailability.findConnectedPlayer(players, playerId)
-                        : PlayerAvailability.findConnectedAllowedPlayer(PlayerAvailability.parse(players), restricted);
-            } catch (Exception e) {
-                Utils.debug("Failed to check player availability: " + e.getMessage());
-            }
-            PlayerAvailability.Player availablePlayer = player;
-            handler.post(() -> playerAvailabilityChecked(playerId, restricted, availablePlayer));
+            List<PlayerAvailability.Player> players = fetchPlayers();
+            PlayerAvailability.Player player = null==restricted
+                    ? PlayerAvailability.findConnectedPlayer(players, playerId)
+                    : PlayerAvailability.findConnectedAllowedPlayer(players, restricted);
+            handler.post(() -> playerAvailabilityChecked(playerId, restricted, players, player));
         });
     }
 
-    private void playerAvailabilityChecked(String playerId, String restricted, PlayerAvailability.Player player) {
+    private void playerAvailabilityChecked(String playerId, String restricted, List<PlayerAvailability.Player> players,
+                                           PlayerAvailability.Player player) {
         if (!Objects.equals(playerId, MainActivity.activePlayer) || !Objects.equals(restricted, restrictedPlayer())) {
             return;
         }
@@ -1437,7 +1444,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             }
             if (started) {
                 // Only this phone's player, whose app was started here; a player elsewhere is left as it is.
-                if (isLocalPlayer(player)) {
+                if (isLocalPlayer(players, player.id)) {
                     powerOn(player);
                 }
                 if (null!=playAfterStart) {
@@ -1459,7 +1466,11 @@ public class ControlService extends MediaBrowserServiceCompat {
         playerWasUnavailable = true;
         long now = SystemClock.elapsedRealtime();
         if (playerStartPending && autoPlayerStarted && now >= nextPlayerRestart) {
-            if (playerRestarts < MAX_PLAYER_RESTARTS) {
+            if (!awaitedPlayerMayBeLocal(players, playerId, restricted)) {
+                // e.g. a player at home, or another player app's player: restarting this phone's app won't bring it.
+                Utils.debug("Waiting for a player that isn't this phone's, not restarting the player app");
+                playerStartPending = false;
+            } else if (playerRestarts < MAX_PLAYER_RESTARTS) {
                 playerRestarts++;
                 nextPlayerRestart = now + PLAYER_RESTART_MS;
                 restartPlayerApp();
@@ -1633,17 +1644,23 @@ public class ControlService extends MediaBrowserServiceCompat {
         return true;
     }
 
-    // Whether the player runs on this phone: by its IP, or by the ID last seen at this phone's IP if a player app
-    // is set.
+    // Whether the player runs on this phone: by its IP (unless several players share it), or by the ID last seen
+    // at this phone's IP if a player app is set.
     private boolean isLocalPlayer(List<PlayerAvailability.Player> players, String playerId) {
-        return PlayerAvailability.isLocalPlayer(PlayerAvailability.findPlayer(players, playerId), playerId,
-                MainActivity.getLocalIpAddresses(), prefs.getString(PlayerAvailability.LOCAL_PLAYER_ID_KEY, null),
-                hasPlayerApp());
+        return PlayerAvailability.isLocalPlayer(players, playerId, MainActivity.getLocalIpAddresses(),
+                prefs.getString(PlayerAvailability.LOCAL_PLAYER_ID_KEY, null), hasPlayerApp());
     }
 
-    private boolean isLocalPlayer(PlayerAvailability.Player player) {
-        return PlayerAvailability.isLocalPlayer(player, player.id, MainActivity.getLocalIpAddresses(),
-                prefs.getString(PlayerAvailability.LOCAL_PLAYER_ID_KEY, null), hasPlayerApp());
+    // Whether the player waited for (the default player with "Only control default") may be this phone's: it is,
+    // or LMS doesn't list it at all (e.g. the player app's first start). The list couldn't be read: assume it may.
+    private boolean awaitedPlayerMayBeLocal(List<PlayerAvailability.Player> players, String playerId, String restricted) {
+        if (null==players) {
+            return true;
+        }
+        PlayerAvailability.Player awaited = null==restricted
+                ? PlayerAvailability.findPlayer(players, playerId)
+                : PlayerAvailability.findAllowedPlayer(players, restricted);
+        return null==awaited || isLocalPlayer(players, awaited.id);
     }
 
     private boolean hasPlayerApp() {
@@ -1854,22 +1871,24 @@ public class ControlService extends MediaBrowserServiceCompat {
         carResumePlay = false;
     }
 
+    // Main thread only; play is run on the main thread.
     private void playOnPlayer(Runnable play) {
+        PlayRequests.Request request = newPlayRequest();
         if (null==restrictedPlayer()) {
             play.run();
             return;
         }
-        getBrowseExecutor().execute(() -> switchOnForPlay(() -> handler.post(play)));
+        getBrowseExecutor().execute(() -> switchOnForPlay(request, play));
     }
 
     // With "Only control default" there's no point playing on the default player while it is switched off: switch
     // it on first, or, if its player app stopped when it was switched off, start that and play once it connects.
     // Playing before it connects would make LMS run through the whole queue, as every track fails at once.
-    // Called on the browse executor; play is run on it, now or once the player connects.
-    private void switchOnForPlay(Runnable requestedPlay) {
-        String playerId = MainActivity.activePlayer;
-        int request = playRequest.incrementAndGet();
-        Runnable play = guardPlay(request, playerId, requestedPlay);
+    // Called on the browse executor, with the request taken when the play arrived; play is run on the main thread,
+    // now or once the player connects, if it is still wanted then (see guardPlay).
+    private void switchOnForPlay(PlayRequests.Request request, Runnable requestedPlay) {
+        String playerId = request.playerId;
+        Runnable play = guardPlay(request, requestedPlay);
         // Not skipped when the last status says the player is on: that can be stale.
         if (null==restrictedPlayer() || Utils.isEmpty(playerId)) {
             play.run();
@@ -1894,7 +1913,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             }
             if (isLocalPlayer(players, playerId)) {
                 // If it still isn't on, the player app is restarted and the current track played once it connects.
-                Runnable playAgain = guardPlay(request, playerId, () -> handler.post(() -> sendCommand(PLAY_COMMAND)));
+                Runnable playAgain = guardPlay(request, () -> sendCommand(PLAY_COMMAND));
                 handler.postDelayed(() -> checkSwitchedOn(playerId, playAgain), POWER_ON_CHECK_MS);
             }
         }

@@ -83,11 +83,11 @@ public class PlayerAvailabilityTest {
         PlayerAvailability.Player phone = new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", false, "192.168.1.8", false);
         Set<String> local = Collections.singleton("10.20.30.40");
 
-        assertTrue(PlayerAvailability.isLocalPlayer(phone, phone.id, local, phone.id, true));
-        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, local, phone.id, false));
-        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, local, "aa:bb:cc:dd:ee:ff", true));
-        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, local, null, true));
-        assertFalse(PlayerAvailability.isLocalPlayer(phone, phone.id, local, "", true));
+        assertTrue(PlayerAvailability.isLocalPlayer(Collections.singletonList(phone), phone.id, local, phone.id, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(Collections.singletonList(phone), phone.id, local, phone.id, false));
+        assertFalse(PlayerAvailability.isLocalPlayer(Collections.singletonList(phone), phone.id, local, "aa:bb:cc:dd:ee:ff", true));
+        assertFalse(PlayerAvailability.isLocalPlayer(Collections.singletonList(phone), phone.id, local, null, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(Collections.singletonList(phone), phone.id, local, "", true));
         // Not listed by LMS (e.g. forgotten): by its ID.
         assertTrue(PlayerAvailability.isLocalPlayer(null, phone.id, local, phone.id, true));
     }
@@ -96,8 +96,9 @@ public class PlayerAvailabilityTest {
     public void localPlayerIsMatchedByIp() {
         PlayerAvailability.Player kitchen = new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", true, "192.168.1.20");
 
-        assertTrue(PlayerAvailability.isLocalPlayer(kitchen, kitchen.id, Collections.singleton("192.168.1.20"), null, false));
-        assertFalse(PlayerAvailability.isLocalPlayer(kitchen, kitchen.id, Collections.singleton("192.168.1.30"), null, true));
+        List<PlayerAvailability.Player> players = Collections.singletonList(kitchen);
+        assertTrue(PlayerAvailability.isLocalPlayer(players, kitchen.id, Collections.singleton("192.168.1.20"), null, false));
+        assertFalse(PlayerAvailability.isLocalPlayer(players, kitchen.id, Collections.singleton("192.168.1.30"), null, true));
     }
 
     @Test
@@ -110,10 +111,10 @@ public class PlayerAvailabilityTest {
         Set<String> local = Collections.singleton("10.20.30.40");
         String remembered = "00:11:22:33:44:55";
 
-        assertFalse(PlayerAvailability.isLocalPlayer(kitchen, kitchen.id, local, remembered, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(players, kitchen.id, local, remembered, true));
         assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local, remembered, true));
         // Nothing remembered yet (never seen at this phone's IP): still not local.
-        assertFalse(PlayerAvailability.isLocalPlayer(kitchen, kitchen.id, local, null, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(players, kitchen.id, local, null, true));
         assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local, null, true));
         // Once the phone's player connects, it is found by its ID.
         players.set(1, new PlayerAvailability.Player("00:11:22:33:44:55", "Phone", true, "192.168.1.8"));
@@ -213,5 +214,53 @@ public class PlayerAvailabilityTest {
         assertFalse(player.powered);
         assertNull(PlayerAvailability.findPlayer(players, "11:22:33:44:55:66"));
         assertNull(PlayerAvailability.findPlayer(null, "00:11:22:33:44:55"));
+    }
+
+    @Test
+    public void severalPlayersAtThisDevicesAddressAreOnlyLocalWhenRemembered() {
+        // The official Squeezelite app and a fork, both registered with LMS from this phone.
+        PlayerAvailability.Player official = new PlayerAvailability.Player("00:11:22:33:44:55", "Official", true, "192.168.1.30");
+        PlayerAvailability.Player fork = new PlayerAvailability.Player("66:77:88:99:aa:bb", "Fork", true, "192.168.1.30");
+        List<PlayerAvailability.Player> players = Arrays.asList(official, fork);
+        Set<String> local = Collections.singleton("192.168.1.30");
+
+        // Nothing remembered: neither is taken for the player app's (nothing started, restarted or switched on).
+        assertFalse(PlayerAvailability.isLocalPlayer(players, official.id, local, null, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(players, fork.id, local, null, true));
+        // The remembered one is, the other isn't.
+        assertTrue(PlayerAvailability.isLocalPlayer(players, fork.id, local, fork.id, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(players, official.id, local, fork.id, true));
+    }
+
+    @Test
+    public void aDisconnectedSecondPlayerAtThisDevicesAddressIsStillAmbiguous() {
+        // The other app's player is stopped, but LMS still lists it at this phone's address.
+        PlayerAvailability.Player official = new PlayerAvailability.Player("00:11:22:33:44:55", "Official", false, "192.168.1.30");
+        PlayerAvailability.Player fork = new PlayerAvailability.Player("66:77:88:99:aa:bb", "Fork", true, "192.168.1.30");
+        List<PlayerAvailability.Player> players = Arrays.asList(official, fork);
+        Set<String> local = Collections.singleton("192.168.1.30");
+
+        assertFalse(PlayerAvailability.isLocalPlayer(players, official.id, local, null, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(players, fork.id, local, null, true));
+        assertFalse(PlayerAvailability.isLocalPlayer(players, official.id, local, fork.id, true));
+        // Nor is the connected one found as this phone's, or learned, unless it was remembered.
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local));
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local, null, true));
+        assertEquals(fork.id, PlayerAvailability.findConnectedLocalPlayer(players, local, fork.id, true).id);
+        assertNull(PlayerAvailability.findConnectedLocalPlayer(players, local, official.id, true));
+        // A player elsewhere doesn't make it ambiguous.
+        PlayerAvailability.Player kitchen = new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", true, "192.168.1.20");
+        assertTrue(PlayerAvailability.isLocalPlayer(Arrays.asList(fork, kitchen), fork.id, local, null, true));
+    }
+
+    @Test
+    public void defaultPlayerIsFoundConnectedOrNot() {
+        PlayerAvailability.Player kitchen = new PlayerAvailability.Player("aa:bb:cc:dd:ee:ff", "Kitchen", false, "192.168.1.20");
+        List<PlayerAvailability.Player> players = Collections.singletonList(kitchen);
+
+        assertEquals(kitchen.id, PlayerAvailability.findAllowedPlayer(players, "Kitchen").id);
+        assertEquals(kitchen.id, PlayerAvailability.findAllowedPlayer(players, kitchen.id).id);
+        assertNull(PlayerAvailability.findConnectedAllowedPlayer(players, "Kitchen"));
+        assertNull(PlayerAvailability.findAllowedPlayer(players, "Phone"));
     }
 }
