@@ -3,9 +3,9 @@
 </p>
 
 # Android Auto support in LMS-Material-App - a client for Lyrion Music Server
-The goal of this reference guide is to help you get an LMS client running in android as a "music player", playing music in the phone itself and in your car, when connected to your car via Android Auto.
+The goal of this reference guide is to help you get an LMS client running in android as a "music player", playing music in the phone itself and -when connected to your car via Android Auto- in the car itself.
 
-This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone, e.g. it can control your server remotely and play . For those, refer to the app documentation.
+This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone.
 
 <p align="center">
 <img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/bef58d6a-b661-4a83-9649-3c617b2390d3" />
@@ -16,14 +16,15 @@ This is not a generic LMS-Material-App guide, that can do much more than playing
 </p>
 
 
-
 ## Requirements
 Two apps are required, both can be found in https://f-droid.org/
 - https://f-droid.org/en/packages/org.lyrion.squeezelite/
 - https://f-droid.org/en/packages/com.craigd.lmsmaterial.app/
 
-You will need at least version 0.11 for android auto to work. 
+You will need at least version 0.11 of both for android auto to work. 
 Once installed, the LMS-Material-App shows as "Lyrion" in your phone's app list; so we will call it "Lyrion App" for short. 
+
+Squeezelite is the app 
 
 ### VPN Tunneling
 
@@ -68,27 +69,36 @@ Both of which can be found as 3rd Party Plugins under "Manage Plugins" in your i
 
 
 ## Recommended Settings for Phone-Centric Users
-For users seeking to mainly use lms-material-app + squeezelite in the phone, streaming from their home server, the following initial settings could help get a 'just works' initial user experience without all the trial and error.
-The list of settings below is not exhaustive.
-There are three configuration points to check: each of the android apps, and the settings in the server-side for your phone.
+For users seeking to use lms-material-app + squeezelite in the phone, streaming from their home server, the following initial settings aim to provide a quick working setup. So you can tweak and customize from there.
+Not every setting is listed - only the relevant ones.
 
-### Settings in lms-material-app (Lyrion app in the phone)
-- Player App: Squeezelite (ar)
-- Auto-start player: ON
+There are three points of configuration needed: 
+  - Lyrion App settings (phone)
+  - Squeezelite App settings (phone)
+  - LMS Server Settings (Player Section)
+
+### Settings in Lyrion App 
+- Player App: `Squeezelite`
+- Change device volume: `ON`
+- Auto-start player: `ON`
 - Add menu entry to start player: ON
-- Stop player when Quit: ON
+- Stop player when Quit: OFF
 - Android Auto:
-  - When album is selected: show tracks
+  - Tab Order:
+    - the first tab in the list will be shown first each time; I use: Albums
+  - When an album is selected: show tracks
   - Ignore the car's play on connect: ON
   - Resume after reconnecting: ON
-  - Show Rediscover Albums list: ON (after installing the [Rediscover Releases](https://github.com/arigit/LMS-Rediscover-Your-Music) plugin on the server)
-- Default Player: (set to the player name you chose in the squeezelite app config; avoid apostrophes "'" in this name)
+- Default Player:
+  - Set this to the player name you chose in the squeezelite app config
 - Only Control Default: ON
 
 ### Settings in squeezelite-app (Squeezelite app in the phone)
-- Name: choose a name without apostrophes "'"
-- Volume control: Synchronized with Android
+- Name:
+  - set to any name e.g. `My Phone`; choose a name without apostrophes "'"
+- Volume control: Synchronized
 - Bit-rate limit: Server setting
+  - 
 - Buffer size: 64MB (+46MB next-track buffer)
 - Restore Volume: OFF
 - Stop on Power Off: ON
