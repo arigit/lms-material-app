@@ -21,10 +21,10 @@ Two apps are required, both can be found in https://f-droid.org/
 - https://f-droid.org/en/packages/org.lyrion.squeezelite/
 - https://f-droid.org/en/packages/com.craigd.lmsmaterial.app/
 
-You will need at least version 0.11 of both for android auto to work. 
-Once installed, the LMS-Material-App shows as "Lyrion" in your phone's app list; so we will call it "Lyrion App" for short. 
+You will need at least version 0.11 of both for Android Auto to work.
+Once installed, the LMS-Material-App shows as "Lyrion" in your phone's app list; so we will call it "Lyrion App" for short.
 
-Squeezelite is the app 
+Squeezelite is the app that actually plays the music on your phone (and, through Android Auto, in the car). The Lyrion App is the controller: you browse your library and control playback with it, and it starts and stops Squeezelite when needed.
 
 ### VPN Tunneling
 
@@ -36,19 +36,19 @@ Your smartphone will also need connectivity to your LMS server so that the Lyrio
 
 ### LMS requirements
 
-Nothing special is required in your LMS server (other than following this setup guide); that said, the Lyrion App will seamlessly expose support for track Rating (in-car, in the `Now Playing` screen) and will show you a browse item called **Rediscover Albums** if either of the following LMS plugins is installed in your server:
+Nothing special is required in your LMS server (other than following this setup guide). Two optional LMS plugins add features in the car:
 
-  - `Ratings Light`
-  - `Rediscover Releases`
+  - `Ratings Light`: track ratings are shown, and can be set, in the car's `Now Playing` screen
+  - `Rediscover Releases`: adds a **Rediscover Albums** list under Albums (also turn on **Show Rediscover Albums list** in the Lyrion App's Android Auto settings)
 
-Both of which can be found as 3rd Party Plugins under "Manage Plugins" in your install
+Both can be found as 3rd Party Plugins under "Manage Plugins" in your LMS server.
 
 
 ## Key Features of this setup
 
 - optimized for **in-car playback of a remote music collection**: your music stays on your Lyrion Music Server at home, and the phone streams it to the car through Android Auto over cellular
 
-- tries to provide a 'just works' solution for LMS users: with the right settings in place (see recommendation below) it will ensure your local player (squeezelite) is running and enabled so when you hit Play, so that playback 'just works'; options are provided to auto-resume queue playback upon car connection and to work around unwanted playback requested sent by cars
+- tries to provide a 'just works' solution for LMS users: with the right settings in place (see recommendations below) it makes sure your local player (Squeezelite) is running and switched on, so that when you hit Play, playback 'just works'; options are provided to resume playback when the car connects and to work around unwanted play requests sent by cars
 
 - it supports in-car queue display and basic management (add to queue, display queue)
 
@@ -88,6 +88,7 @@ In the App Settings section enter the **Application** settings page
   - Tab Order:
     - the first tab in the list will be shown first each time; I use: Albums
   - When an album is selected: `show tracks`
+  - Show Rediscover Albums list: `ON` if the Rediscover Releases plugin is installed on your server
   - Ignore the car's play on connect: `ON`
   - Resume after reconnecting: `ON`
 - Default Player:
@@ -131,9 +132,10 @@ Then scroll to the bottom of the player settings page and tap **Extra Settings**
 
 - **Audio** section
   - Power On Resume: `Stop at power off / Remain stopped at power on`
+    - with this setting, switching the player off and on again (the Power button in the car) starts the current track from the beginning. If you prefer to continue where you left off, choose `Pause at power off / Remain paused at power on`: the Lyrion App then remembers the position and returns to it
   - Volume Control: `Volume control adjusts outputs`
   - Bitrate limiting: `No limit`
-    - this setting can be overridden by the Squeezelite App in the phone if transcoding is needed, so it's saffe to leave as `No limit`
+    - this setting can be overridden by the Squeezelite App in the phone if transcoding is needed, so it's safe to leave as `No limit`
   - Volume Adjustment / Replay Gain: Smart Gain
     - this setting only acts if your tracks are tagged with Replay Gain values, which is useful specially when shuffling tracks from different albums in a playlist
     
