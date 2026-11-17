@@ -249,6 +249,10 @@ public class ControlService extends MediaBrowserServiceCompat {
     };
     private final Runnable staleTimeCheck = () -> requestActiveStatus("position at the end of the track");
     private final Runnable trackEndCheck = () -> requestActiveStatus("track should have ended");
+    // With the car connected: a player stuck at the end of a track (see StuckTrack) is moved on to the next track,
+    // what the driver had to do by hand.
+    private final StuckTrack stuckTrack = new StuckTrack();
+    private final Runnable stuckCheck = () -> requestActiveStatus("still at the end of the track");
     // Position saved when Power switched the active player off, if LMS is set to pause it then. A Squeezelite
     // player disconnects when switched off, so LMS stops it and forgets the position: seek back once it plays again.
     private String resumePlayer;
@@ -533,6 +537,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             }
         }
         playingStatusPlayer = playing ? status.id : null;
+        checkStuckTrack(playing ? status : null);
         if (!playing || status.duration <= 0) {
             handler.removeCallbacks(staleTimeCheck);
             handler.removeCallbacks(trackEndCheck);
@@ -552,6 +557,28 @@ public class ControlService extends MediaBrowserServiceCompat {
         handler.removeCallbacks(staleTimeCheck);
         handler.removeCallbacks(trackEndCheck);
         handler.postDelayed(trackEndCheck, status.duration - status.time + TRACK_END_RECHECK_MS);
+    }
+
+    // Main thread, from scheduleStatusChecks: null when the active player isn't playing.
+    private void checkStuckTrack(PlayerStatus status) {
+        handler.removeCallbacks(stuckCheck);
+        long now = SystemClock.elapsedRealtime();
+        boolean stuck = null!=status && carConnected && stuckTrack.check(status.id, status.trackId,
+                status.playlistIndex, true, status.time, status.duration, status.pushed, now);
+        if (null==status || !carConnected) {
+            stuckTrack.check(null, 0, -1, false, 0, 0, false, now);
+            return;
+        }
+        if (stuck) {
+            Utils.warn("Stuck at the end of the track (" + status.title + ", index " + status.playlistIndex +
+                    ") for " + stuckTrack.stuckFor(now) / 1000 + " s, skipping to the next track");
+            sendCommand(NEXT_COMMAND);
+            return;
+        }
+        long wait = stuckTrack.msUntilCheck(now);
+        if (wait >= 0) {
+            handler.postDelayed(stuckCheck, wait + 100);
+        }
     }
 
     private synchronized MediaSessionCompat.Callback getMediaSessionCallback() {
@@ -1611,6 +1638,12 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (status.trackId > 0 && status.trackId != resumeTrackId) {
             resumePlayer = null; // another track was played
         } else if (status.isPlaying && status.trackId == resumeTrackId) {
+            if (status.duration > 0 && status.time >= status.duration - StuckTrack.AT_END_MS &&
+                    resumeTime < status.duration - StuckTrack.AT_END_MS) {
+                // Right after a (re)start LMS can report the end of the track until the player's first status:
+                // that would skip the seek. Wait for the next one.
+                return;
+            }
             if (status.time < resumeTime - RESUME_TOLERANCE_MS) {
                 Utils.debug("Resuming " + status.id + " at " + Utils.timeStr(resumeTime));
                 rpc.sendMessage(status.id, new String[]{"time", String.valueOf(resumeTime / 1000.0)});
