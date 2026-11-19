@@ -15,11 +15,14 @@ import java.util.Objects;
  *
  * LMS also reports a position at the end of the track for a short while right after an unpause (it extrapolates
  * over the pause), and its pushes don't always bring the correction. So only status reads count, and only once the
- * position has stayed at the end of the same track (same queue index) for STUCK_MS. Library tracks only: a remote
- * stream's duration can be shorter than the stream. Main thread only.
+ * position has stayed at the end of the same track (same queue index) for STUCK_MS. LMS's position can also run
+ * ahead of the audio: it maps the player's clock to its own with an offset it only lowers, or resets after a jump of
+ * more than 50 s, so a player whose clock stopped for less than that (Squeezelite on a sleeping phone) stays ahead by
+ * up to 50 s. Hence a minute. Library tracks only: a remote stream's duration can be shorter than the stream. Main
+ * thread only.
  */
 final class StuckTrack {
-    static final long STUCK_MS = 20000;
+    static final long STUCK_MS = 60000;
     static final long AT_END_MS = 500;
 
     private String key;
