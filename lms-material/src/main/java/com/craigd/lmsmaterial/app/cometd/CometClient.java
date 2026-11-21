@@ -60,6 +60,7 @@ public class CometClient {
     private HttpClient httpClient;
     // Stops dropped HTTP clients, off the connection thread: a stop waits for the client's threads to end.
     private final ScheduledExecutorService httpClientStopper = Executors.newSingleThreadScheduledExecutor();
+    private boolean stopped = false;
     private String currentPlayer = null;
     private String subscribedPlayer = null;
     // A single listener: onConnected() runs again after every rehandshake, and subscribing a new one each time
@@ -180,8 +181,30 @@ public class CometClient {
         return connectionState.isConnected() && null!=bayeuxClient;
     }
 
+    /**
+     * For the service's onDestroy: drops the connection whatever state it is in, and ends the client's thread.
+     * disconnect() only drops a connected client: one that was handshaking or rehandshaking kept retrying, and
+     * came back next to the new service's client (seen when Android Auto unbound a service it had started).
+     */
+    public void stop() {
+        Utils.debug("");
+        synchronized (this) {
+            stopped = true;
+        }
+        connectionState.setConnectionState(ConnectionState.State.DISCONNECTED);
+        backgroundHandler.removeCallbacksAndMessages(null);
+        backgroundHandler.post(() -> {
+            disconnectFromServer();
+            httpClientStopper.shutdown(); // still runs the stop just scheduled
+            backgroundHandler.getLooper().quitSafely();
+        });
+    }
+
     public synchronized void connect() {
         Utils.debug("");
+        if (stopped) {
+            return;
+        }
         connectionState.setConnectionState(ConnectionState.State.CONNECTION_STARTED);
         backgroundHandler.post(() -> {
             // A connect while connected (e.g. two network changes in a row) would otherwise leave the old client
@@ -355,6 +378,9 @@ public class CometClient {
 
     private synchronized void onConnected() {
         Utils.debug("currentPlayer:"+currentPlayer);
+        if (stopped) {
+            return;
+        }
         subscribedPlayer = null;
         connectionState.setConnectionState(ConnectionState.State.CONNECTION_COMPLETED);
         ClientSessionChannel statusChannel = bayeuxClient.getChannel("/"+bayeuxClient.getId() + "/slim/playerstatus/*");
@@ -690,6 +716,9 @@ public class CometClient {
 
     @SuppressWarnings("unchecked")
     private synchronized void handlePlayerStatus(ClientSessionChannel channel, Message message) {
+        if (stopped) {
+            return;
+        }
         String[] parts = message.getChannel().split("/");
         String playerId = parts[parts.length - 1];
         Utils.verbose("CometD " + playerId);

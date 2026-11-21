@@ -1241,7 +1241,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             carConnectionReceiver = null;
         }
         if (null!=cometClient) {
-            cometClient.disconnect();
+            cometClient.stop();
         }
         if (null!=browseExecutor) {
             browseExecutor.shutdownNow();
@@ -2218,6 +2218,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     @SuppressLint("MissingPermission")
     private synchronized Notification updateNotification() {
         Utils.debug("");
+        if (null==mediaSession) { // destroyed
+            return null;
+        }
         if (!Utils.notificationAllowed(this, NOTIFICATION_CHANNEL_ID)) {
             return null;
         }
