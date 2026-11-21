@@ -12,6 +12,7 @@ import static com.craigd.lmsmaterial.app.MainActivity.LMS_USERNAME_KEY;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.ForegroundServiceStartNotAllowedException;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -183,6 +184,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     private Bitmap fallbackBitmap;
     private long playerAvailabilityDeadline;
     private boolean playerWasUnavailable;
+    // Android 12+ refused to start this service in the foreground: Android restarted it in the background (it is
+    // sticky) after the app crashed.
+    private boolean foregroundRefused;
     private final Runnable playerAvailabilityCheck = this::checkPlayerAvailability;
     private long lastAutoConnect = 0;
     private long autoPlayerDeadline;
@@ -1198,6 +1202,9 @@ public class ControlService extends MediaBrowserServiceCompat {
             return super.onBind(intent);
         }
         Utils.debug("");
+        if (foregroundRefused) {
+            createNotification(); // the app's window binds, so it's visible: allowed again
+        }
         return messenger.getBinder();
     }
 
@@ -1300,6 +1307,16 @@ public class ControlService extends MediaBrowserServiceCompat {
             MediaButtonReceiver.handleIntent(mediaSession, intent);
         }
         super.onStartCommand(intent, flags, startId);
+        if (foregroundRefused) {
+            createNotification(); // allowed again once the app is visible
+        }
+        if (foregroundRefused) {
+            // Without the notification it shouldn't keep running: it stays only while Android Auto is bound to it,
+            // and the app starts it again when opened.
+            Utils.warn("Not allowed in the foreground, stopping");
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
         return START_STICKY;
     }
 
@@ -2300,17 +2317,29 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (null==notification) {
             return;
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Utils.debug("startForegroundService");
-            startForegroundService(new Intent(this, ControlService.class));
-        } else {
-            Utils.debug("startService");
-            startService(new Intent(this, ControlService.class));
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Utils.debug("startForegroundService");
+                startForegroundService(new Intent(this, ControlService.class));
+            } else {
+                Utils.debug("startService");
+                startService(new Intent(this, ControlService.class));
+            }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            Utils.debug("ServiceCompat.startForeground");
-            ServiceCompat.startForeground(this, MSG_ID, notification, Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ? ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK : 0);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                Utils.debug("ServiceCompat.startForeground");
+                ServiceCompat.startForeground(this, MSG_ID, notification, Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ? ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK : 0);
+            }
+            foregroundRefused = false;
+        } catch (IllegalStateException e) {
+            // Android 12+ doesn't allow it from the background (ForegroundServiceStartNotAllowedException): after a
+            // crash Android restarts this sticky service in the background, and the exception crashed it again.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e instanceof ForegroundServiceStartNotAllowedException) {
+                Utils.warn("Can't start in the foreground from the background: " + e.getMessage());
+                foregroundRefused = true;
+            } else {
+                throw e;
+            }
         }
     }
 
