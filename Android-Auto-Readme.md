@@ -1,9 +1,9 @@
 # Android Auto support in LMS-Material-App - a client for Lyrion Music Server
-The goal of this reference guide is to help you get an LMS client running in your Android phone as a "music player", playing music in the phone itself: when connected to your car via Android Auto (streaming over a cellular network), or to your phone earbud's (streaming over wifi or a cellular connection).
+The goal of this reference guide is to help you get an LMS client running in your Android phone as a "music player", playing music on the phone itself, and on your car via Android Auto (streaming over a cellular network) or your earbuds (streaming over WiFi or a cellular connection).
 
 This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone: it can control remote players, help you setup your server etc.
 
-If you follow the recommended settings and setup always-on connectivity to your LMS server, you can expect a just-works setup, where you can use the Lyrion App in your phone at home, in the office, in your car (via Android Auto) and expect it to work seamlessly. In my case, with this setup I stream (daily) high-resolution audio content (all FLACs, up to 24-bit/192 Khz) without any transcoding over WiFi and 5G Cellular, with zero audio drops; typical commutes last 45 minutes with both city and highway driving. Warning: you may need to setup transcoding (also covered in this guide) if you have a data volume "cap & throttling" plan in your cellular data plan or if your cellular network can't keep up with hi-res content; in my transcoding-free setup I consume around ~100GB of cellular data per month mostly driven by Lyrion audio streaming.
+If you follow the recommended settings and setup always-on connectivity to your LMS server, you can expect a just-works setup, where you can use the Lyrion App in your phone at home, in the office, in your car (via Android Auto) and expect it to work seamlessly. In my case, with this setup I stream (daily) high-resolution audio content (all FLACs, up to 24-bit/192 kHz) without any transcoding over WiFi and 5G Cellular, with zero streaming drops; typical commutes last 45 minutes with both city and highway driving. Warning: you may need to setup transcoding (also covered in this guide) if you have a data volume "cap & throttling" plan in your cellular data plan or if your cellular network can't keep up with hi-res content; in my transcoding-free setup I consume around ~100GB of cellular data per month mostly driven by Lyrion audio streaming.
 
 This setup is able to cover cellular coverage gaps that can last up to a few minutes (between 1 and 2 full tracks) ensuring no playback interruption. In the future if there is demand we may be able to add support in Android Squeezelite for more than 2-track dynamic buffering to cover more extended cellular coverage gaps.
 
@@ -40,11 +40,11 @@ Squeezelite is the app that actually plays the music on your phone (and, through
 
 Your smartphone will need connectivity to your LMS server so that the Lyrion App can connect to it and get your music streamed to your phone while away from home. The simplest and most secure way to do this is a light VPN solution; the setup for this is out of scope of this guide but here are two pointers:
 
-  - the simplest, most reliable and lighter (on the phone) own VPN solution I have found is Tailscale (https://tailscale.com/); they have a solid reputation RE privacy and ease of use, the linux client and the android clients are open source; some parts of their backend infrastructure are not. 
+  - the simplest, most reliable and lightest (on the phone) self-hosted VPN solution I have found is Tailscale (https://tailscale.com/); they have a solid reputation for privacy and ease of use, the linux client and the android clients are open source; some parts of their backend infrastructure are not. 
     -  install the client in your home-server that is running LMS (linux, mac, etc all supported; I use Tailscale's docker container), then add your home-server to your "Tailnet".
     -  install the client in your phone, add your phone to your Tailnet, done.
     -  turn Tailscale ON in your phone and forget about it.
-    -  Your phone will always be able to connect to your home-server and it's apps (e.g. LMS, Home Assistant, etc) all the time regardless of how you connect to the internet: over cellular, over WiFi at home or at work; the VPN client is smart and when possible it routes all traffic peer to peer.
+    -  Your phone will always be able to connect to your home-server and its apps (e.g. LMS, Home Assistant, etc) all the time regardless of how you connect to the internet: over cellular, over WiFi at home or at work; the VPN client is smart and when possible it routes all traffic peer to peer.
   
     - In my experience, Tailscale just works, all the time, no need to turn it off. It uses Wireguard under the hood which means it is very light on the phone CPU and battery. You can select if you want to funnel all your internet traffic on the VPN tunnel or just the traffic to your home-server.
 
@@ -55,7 +55,7 @@ Your smartphone will need connectivity to your LMS server so that the Lyrion App
 Nothing special is required in your LMS server (other than following this setup guide). There are two optional LMS plugins that when installed, will add features to the user interface in the car:
 
   - `Ratings Light`: track ratings are shown, and can be set, in the car's `Now Playing` screen
-  - `Rediscover Releases`: adds a **Rediscover Albums** list under Albums (for this, in addition to installing the add-on, you would need to also turn on **Show Rediscover Albums list** in the Lyrion App's settings -> Android Audio section)
+  - `Rediscover Releases`: adds a **Rediscover Albums** list under Albums (for this, in addition to installing the add-on, you would need to also turn on **Show Rediscover Albums list** in the Lyrion App's settings -> Android Auto section)
 
 Both can be found as 3rd Party Plugins under "Manage Plugins" in your LMS server.
 
