@@ -1,18 +1,28 @@
 # Android Auto support in LMS-Material-App - a client for Lyrion Music Server
-The goal of this reference guide is to help you get an LMS client running in android as a "music player", playing music in the phone itself and -when connected to your car via Android Auto- in the car itself.
+The goal of this reference guide is to help you get an LMS client running in your Android phone as a "music player", playing music in the phone itself: when connected to your car via Android Auto (streaming over a cellular network), or to your phone earbud's (streaming over wifi or a cellular connection).
 
-This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone.
+This is not a generic LMS-Material-App guide, that can do much more than playing music in your phone: it can control remote players, help you setup your server etc.
+
+If you follow the recommended settings and setup always-on connectivity to your LMS server, you can expect a just-works setup, where you can use the Lyrion App in your phone at home, in the office, in your car (via Android Auto) and expect it to work seamlessly. In my case, with this setup I stream (daily) high-resolution audio content (all FLACs, up to 24-bit/192 Khz) without any transcoding over WiFi and 5G Cellular, with zero audio drops; typical commutes last 45 minutes with both city and highway driving. Warning: you may need to setup transcoding (also covered in this guide) if you have a data volume "cap & throttling" plan in your cellular data plan or if your cellular network can't keep up with hi-res content; in my transcoding-free setup I consume around ~100GB of cellular data per month mostly driven by Lyrion audio streaming.
+
+This setup is able to cover cellular coverage gaps that can last up to a few minutes (between 1 and 2 full tracks) ensuring no playback interruption. In the future if there is demand we may be able to add support in Android Squeezelite for more than 2-track dynamic buffering to cover more extended cellular coverage gaps.
+
+## In-car UI Snapshots
 
 <p align="center">
   <img center width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/dc00ab9c-2cbb-4f2a-b6f5-37423f64078a" />
 </p>
 
 <p align="center">
-<img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/bef58d6a-b661-4a83-9649-3c617b2390d3" />
+<img width="868" height="373" alt="image" src="https://github.com/user-attachments/assets/2ad6fae5-5cbb-4ef8-9022-b230221a146e" />
 </p>
 
 <p align="center">
 <img width="863" height="367" alt="image" src="https://github.com/user-attachments/assets/97cb691e-77d5-4865-8b24-749e56c10213" />
+</p>
+
+<p align="center">
+<img width="868" height="373" alt="image" src="https://github.com/user-attachments/assets/673cf3f0-36b9-42cb-bb19-788867a138bc" />
 </p>
 
 
@@ -28,18 +38,24 @@ Squeezelite is the app that actually plays the music on your phone (and, through
 
 ### VPN Tunneling
 
-Your smartphone will also need connectivity to your LMS server so that the Lyrion App can connect to it and get your music streamed to your phone while away from home. The simplest and most secure way to do this is a light VPN solution; the setup for this is out of scope of this guide but here are two pointers:
+Your smartphone will need connectivity to your LMS server so that the Lyrion App can connect to it and get your music streamed to your phone while away from home. The simplest and most secure way to do this is a light VPN solution; the setup for this is out of scope of this guide but here are two pointers:
 
-  - the simplest, most reliable VPN I have found is Tailscale (https://tailscale.com/), install the client in your home-server that is running LMS (linux, mac, etc all supported; I use tailscale's docker container), then add your home-server to your "tailnet", install the client in your phone, add your phone to your tailnet, done. Turn tailscale ON in your phone and forget about it. Your phone will always be able to connect to your home-server and it's apps (e.g. LMS, Home Assistant, etc) all the time regardless of how you connect to the internet: over cellular, over WiFi at work, and at home; tailscale is smart and when possible it routes all traffic peer to peer. It just works, all the time. It uses wireguard under the hood that is very light. You can select if you want to funnel on the VPN tunnel all your internet traffic or just the traffic to your home-server.
+  - the simplest, most reliable and lighter (on the phone) own VPN solution I have found is Tailscale (https://tailscale.com/); they have a solid reputation RE privacy and ease of use, the linux client and the android clients are open source; some parts of their backend infrastructure are not. 
+    -  install the client in your home-server that is running LMS (linux, mac, etc all supported; I use Tailscale's docker container), then add your home-server to your "Tailnet".
+    -  install the client in your phone, add your phone to your Tailnet, done.
+    -  turn Tailscale ON in your phone and forget about it.
+    -  Your phone will always be able to connect to your home-server and it's apps (e.g. LMS, Home Assistant, etc) all the time regardless of how you connect to the internet: over cellular, over WiFi at home or at work; the VPN client is smart and when possible it routes all traffic peer to peer.
+  
+In my experience, it just works, all the time, no need to turn it off. It uses Wireguard under the hood which means it is very light on the phone CPU and battery. You can select if you want to funnel all your internet traffic on the VPN tunnel or just the traffic to your home-server.
 
-  - your router / access point solution may include VPN support. For example, mid-range ASUS routers include support for various VPN flavors. The lightest is wireguard, it's almost trivial to pair your phone with your router via a QR code your router's GUI will display. This solution will funnel all of the internet traffic of your phone to your home router, which will allow your phone to reach your LMS server.
+  - your router / access point solution may include VPN support. For example, mid-range ASUS routers include support for various VPN flavours. The lightest is Wireguard, it's almost trivial to pair your phone with your router via a QR code your router's GUI will display. This solution will funnel all of the internet traffic of your phone to your home router, which will allow your phone to reach your LMS server.
 
 ### LMS requirements
 
-Nothing special is required in your LMS server (other than following this setup guide). Two optional LMS plugins add features in the car:
+Nothing special is required in your LMS server (other than following this setup guide). There are two optional LMS plugins that when installed, will add features to the user interface in the car:
 
   - `Ratings Light`: track ratings are shown, and can be set, in the car's `Now Playing` screen
-  - `Rediscover Releases`: adds a **Rediscover Albums** list under Albums (also turn on **Show Rediscover Albums list** in the Lyrion App's Android Auto settings)
+  - `Rediscover Releases`: adds a **Rediscover Albums** list under Albums (for this, in addition to installing the add-on, you would need to also turn on **Show Rediscover Albums list** in the Lyrion App's settings -> Android Audio section)
 
 Both can be found as 3rd Party Plugins under "Manage Plugins" in your LMS server.
 
@@ -69,8 +85,9 @@ Both can be found as 3rd Party Plugins under "Manage Plugins" in your LMS server
 
 
 ## Recommended Settings for Phone-Centric Users
-For users seeking to use lms-material-app + squeezelite in the phone, streaming from their home server, the following initial settings aim to provide a quick working setup. So you can tweak and customize from there.
-Not every setting is listed - only the relevant ones.
+For the simplified use case (streaming from their home server over cellular or over wi-fi), the following initial settings aim to provide a working setup, fast. So you can later tweak and customize them as needed.
+
+Not every setting is listed - only the most relevant ones.
 
 There are three points of configuration needed: 
   - Lyrion App settings (phone)
@@ -100,7 +117,7 @@ In the App Settings section enter the **Application** settings page
   - set to any name e.g. `My Phone`; choose a name without apostrophes `'`
 - Volume control: `Synchronized`
 - Bit-rate limit: `Use server setting`
-  - The recommended settings will stream the track as-is in the server to your phone; if your collection has hi-resolution lossless content, some (cellular) networks may be unable to provide the required throughput. If that happens you will get audio-cuts, if so then change this setting to e.g `192 kbps`; that will cause your server to transcode the content to mp3 and stream it at a far lower bitrate. You may also want to do this if your cellular service has a low volumetric quota (e.g. 10GB / month)
+  - The recommended settings will stream the track as-is in the server to your phone; if your collection has hi-resolution lossless content, some (cellular) networks may be unable to provide the required throughput. If that happens you will get audio-cuts, if so then change this setting to e.g `192 kbps`; that will cause your server to transcode the content to mp3 and stream it at a far lower bitrate. You would also need to do this if your cellular service has a low volumetric quota (e.g. 10GB / month) that would get exhausted very quickly unless you transcode.
 - Apply bit rate limit: `When on cellular or metered network`
 - Buffer size: `Current + next song in full (dynamic buffer)`
   - Maximum size for Current Song and Next Song buffers: `256 MB`
