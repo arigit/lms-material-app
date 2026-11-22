@@ -31,4 +31,15 @@ public class PlayRequestsTest {
         requests.cancel(); // Pause, while the play waits in the executor's queue
         assertFalse(requests.isWanted(play, "phone"));
     }
+
+    @Test
+    public void theCancelCountChangesOnPauseOnly() {
+        // The car resume check uses it: a Pause during the check drops the resume, a new play doesn't.
+        PlayRequests requests = new PlayRequests();
+        int before = requests.cancelCount();
+        requests.next("phone");
+        assertTrue(before == requests.cancelCount());
+        requests.cancel();
+        assertFalse(before == requests.cancelCount());
+    }
 }

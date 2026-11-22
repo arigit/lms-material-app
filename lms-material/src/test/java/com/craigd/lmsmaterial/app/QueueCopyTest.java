@@ -187,4 +187,17 @@ public class QueueCopyTest {
         assertEquals(Arrays.asList("track:9"), lms.queue);
         assertEquals(0, lms.requests);
     }
+
+    @Test
+    public void aQueueLongerThanItsSnapshotIsIncomplete() {
+        List<QueueCopy.Entry> entries = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            entries.add(new QueueCopy.Entry(String.valueOf(i), "file:///" + i));
+        }
+        QueueCopy.Snapshot snapshot = new QueueCopy.Snapshot(entries, 0);
+        assertTrue(QueueCopy.isComplete(snapshot, 3));
+        assertTrue(QueueCopy.isComplete(snapshot, 0)); // no playlist_tracks given
+        assertFalse(QueueCopy.isComplete(snapshot, 4)); // LMS sent only the first entries
+        assertFalse(QueueCopy.isComplete(null, 0));
+    }
 }

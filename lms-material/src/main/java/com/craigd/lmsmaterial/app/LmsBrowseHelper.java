@@ -1477,11 +1477,21 @@ public class LmsBrowseHelper {
             status = null==status ? null : status.optJSONObject("result");
             QueueCopy.Snapshot source = queueSnapshot(status);
             if (null==source || source.entries.isEmpty()) return false;
+            if (!QueueCopy.isComplete(source, status.optInt("playlist_tracks", 0))) {
+                Utils.debug("Copy queue: the queue of " + fromId + " is longer than " + BROWSE_LIMIT + " entries, not copying");
+                return false;
+            }
             double time = status.optDouble("time", 0);
             JSONObject old = rpc.sendMessageSync(toId, new String[]{"status", "0", String.valueOf(BROWSE_LIMIT), "tags:u"}, TIMEOUT_MS);
-            QueueCopy.Snapshot oldQueue = queueSnapshot(null==old ? null : old.optJSONObject("result"));
+            JSONObject oldStatus = null==old ? null : old.optJSONObject("result");
+            QueueCopy.Snapshot oldQueue = queueSnapshot(oldStatus);
             if (null==oldQueue) {
                 Utils.debug("Copy queue: can't read the queue of " + toId + ", not copying");
+                return false;
+            }
+            if (!QueueCopy.isComplete(oldQueue, oldStatus.optInt("playlist_tracks", 0))) {
+                // It couldn't be put back in full if the copy failed.
+                Utils.debug("Copy queue: the queue of " + toId + " is longer than " + BROWSE_LIMIT + " entries, not copying");
                 return false;
             }
             Utils.debug("Copying the queue of " + fromId + " to " + toId + ": " + source.entries.size() + " entries, at " +
@@ -1756,6 +1766,11 @@ public class LmsBrowseHelper {
             return true;
         }
         return false;
+    }
+
+    // A "Copy Queue From Player" entry: copied with synchronous requests, so on the browse executor.
+    public static boolean isCopyQueue(String mediaId) {
+        return mediaId.startsWith(COPY_QUEUE_PREFIX);
     }
 
     public static boolean isQueueAdd(String mediaId) {

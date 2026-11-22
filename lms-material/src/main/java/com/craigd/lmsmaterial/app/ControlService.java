@@ -267,6 +267,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     private CarResume carResume;
     private boolean carResumeChecking;
     private boolean carResumePlay; // a play arrived during the check
+    private int carResumeCancels; // playRequests.cancelCount() when the check started, or the last play during it
     // The player last seen playing, and when (elapsedRealtime, also set when it stops playing): whether it was
     // playing shortly before the car disconnected.
     private String playingPlayer;
@@ -692,6 +693,17 @@ public class ControlService extends MediaBrowserServiceCompat {
                     }
                     clearCarResume("played from browse");
                     PlayRequests.Request request = newPlayRequest();
+                    if (LmsBrowseHelper.isCopyQueue(mediaId)) {
+                        // Checked on the main thread, then copied on the browse executor (many requests, each
+                        // waited for), checked again there.
+                        getBrowseExecutor().execute(() -> switchOnForPlay(request, () -> getBrowseExecutor().execute(() -> {
+                            if (playRequests.isWanted(request, MainActivity.activePlayer) &&
+                                    getBrowseHelper().playMediaId(mediaId)) {
+                                handler.post(ControlService.this::playbackRequested);
+                            }
+                        })));
+                        return;
+                    }
                     getBrowseExecutor().execute(() -> switchOnForPlay(request, () -> {
                         if (getBrowseHelper().playMediaId(mediaId)) {
                             playbackRequested();
@@ -1841,6 +1853,10 @@ public class ControlService extends MediaBrowserServiceCompat {
     private void checkCarResume(boolean play) {
         carResumePlay |= play;
         CarResume resume = carResume;
+        if (play || !carResumeChecking) {
+            // A Pause before this counts no more: the latest request is to play (or nothing yet).
+            carResumeCancels = playRequests.cancelCount();
+        }
         if (null==resume || carResumeChecking) {
             return;
         }
@@ -1882,6 +1898,11 @@ public class ControlService extends MediaBrowserServiceCompat {
         carResumeChecking = false;
         boolean play = carResumePlay;
         carResumePlay = false;
+        if (carResumeCancels != playRequests.cancelCount()) {
+            // Paused (or another player selected) while the status was read: the user doesn't want it to play.
+            clearCarResume("paused during the resume check");
+            return;
+        }
         if (resume != carResume || !ok || !resume.player.equals(MainActivity.activePlayer)) {
             // Cleared meanwhile, or the status couldn't be read (tried again on the next status).
             if (play) {
@@ -1945,9 +1966,19 @@ public class ControlService extends MediaBrowserServiceCompat {
             return;
         }
         List<PlayerAvailability.Player> players = fetchPlayers();
+        // A Pause or another play may have come while the player list was read: then don't start or switch on
+        // the player for this one (play would be dropped anyway).
+        if (!playRequests.isWanted(request, MainActivity.activePlayer)) {
+            Utils.debug("Not switching on " + playerId + " for a play no longer wanted");
+            return;
+        }
         PlayerAvailability.Player player = PlayerAvailability.findPlayer(players, playerId);
         if (null==player || !player.connected) {
             handler.post(() -> {
+                if (!playRequests.isWanted(request, MainActivity.activePlayer)) {
+                    Utils.debug("Not starting the player app for a play no longer wanted");
+                    return;
+                }
                 if (!startPlayerApp(players, playerId, play)) {
                     getBrowseExecutor().execute(play);
                 }

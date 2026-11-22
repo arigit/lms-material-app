@@ -53,6 +53,12 @@ final class QueueCopy {
 
     static final int MAX_RUN = 100;
 
+    // A queue read with a limit on the number of entries: does it hold the whole queue of queueLength tracks?
+    // A longer queue can't be copied, or put back after a failed copy, in full.
+    static boolean isComplete(Snapshot snapshot, int queueLength) {
+        return null!=snapshot && snapshot.entries.size() >= queueLength;
+    }
+
     private QueueCopy() {
     }
 
