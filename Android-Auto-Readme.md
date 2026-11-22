@@ -46,7 +46,7 @@ Your smartphone will need connectivity to your LMS server so that the Lyrion App
     -  turn Tailscale ON in your phone and forget about it.
     -  Your phone will always be able to connect to your home-server and it's apps (e.g. LMS, Home Assistant, etc) all the time regardless of how you connect to the internet: over cellular, over WiFi at home or at work; the VPN client is smart and when possible it routes all traffic peer to peer.
   
-In my experience, it just works, all the time, no need to turn it off. It uses Wireguard under the hood which means it is very light on the phone CPU and battery. You can select if you want to funnel all your internet traffic on the VPN tunnel or just the traffic to your home-server.
+    - In my experience, Tailscale just works, all the time, no need to turn it off. It uses Wireguard under the hood which means it is very light on the phone CPU and battery. You can select if you want to funnel all your internet traffic on the VPN tunnel or just the traffic to your home-server.
 
   - your router / access point solution may include VPN support. For example, mid-range ASUS routers include support for various VPN flavours. The lightest is Wireguard, it's almost trivial to pair your phone with your router via a QR code your router's GUI will display. This solution will funnel all of the internet traffic of your phone to your home router, which will allow your phone to reach your LMS server.
 
