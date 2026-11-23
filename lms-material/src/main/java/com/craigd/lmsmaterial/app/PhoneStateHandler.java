@@ -81,7 +81,12 @@ public class PhoneStateHandler {
         if (MainActivity.isActive() || ControlService.isActive()) {
             inCall = true;
             if (MUTE_CURRENT.equals(action) || PAUSE_CURRENT.equals(action)) {
-                activePlayers.add(MainActivity.activePlayer);
+                String current = currentPlayer();
+                if (Utils.isEmpty(current)) {
+                    Utils.debug("No current player");
+                    return;
+                }
+                activePlayers.add(current);
                 controlPlayers();
             } else {
                 getActivePlayers();
@@ -103,6 +108,14 @@ public class PhoneStateHandler {
         activePlayers.clear();
     }
 
+    // MainActivity.activePlayer is only set once the page reports a player, so it is null if
+    // the call comes before that (server unreachable, or service started without the window).
+    private String currentPlayer() {
+        return Utils.isEmpty(MainActivity.activePlayer)
+                ? prefs.getString(MainActivity.CURRENT_PLAYER_ID_KEY, null)
+                : MainActivity.activePlayer;
+    }
+
     private void getActivePlayers() {
         rpc.sendMessage("", new String[]{"material-skin", "activeplayers"}, rpcResponse);
     }
@@ -113,16 +126,17 @@ public class PhoneStateHandler {
             return;
         }
         String action = prefs.getString(SettingsActivity.ON_CALL_PREF_KEY, DO_NOTHING);
-        Utils.debug("Control players, action:" + action + ", active:" + activePlayers + ", current:"+MainActivity.activePlayer);
+        String current = currentPlayer();
+        Utils.debug("Control players, action:" + action + ", active:" + activePlayers + ", current:"+current);
         if (MUTE_ALL.equals(action) || PAUSE_ALL.equals(action)) {
             for (String id: activePlayers) {
                 controlPlayer(action, id);
             }
         } else if (MUTE_CURRENT.equals(action) || PAUSE_CURRENT.equals(action)) {
             for (String id: activePlayers) {
-                Utils.debug(id+"=="+MainActivity.activePlayer+" ? " + id.equals(MainActivity.activePlayer));
+                Utils.debug(id+"=="+current+" ? " + id.equals(current));
 
-                if (id.equals(MainActivity.activePlayer)) {
+                if (id.equals(current)) {
                     Utils.debug("Matched ID");
                     controlPlayer(action, id);
                     break;
