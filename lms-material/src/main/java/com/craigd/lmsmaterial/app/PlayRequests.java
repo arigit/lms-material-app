@@ -21,6 +21,7 @@ final class PlayRequests {
     }
 
     private final AtomicInteger counter = new AtomicInteger();
+    private final AtomicInteger cancels = new AtomicInteger();
 
     // A new play for playerId: any earlier play still waiting is no longer wanted.
     Request next(String playerId) {
@@ -30,6 +31,12 @@ final class PlayRequests {
     // Pause, or another player selected: no waiting play is wanted any more.
     void cancel() {
         counter.incrementAndGet();
+        cancels.incrementAndGet();
+    }
+
+    // Changes on every cancel() only (not on a new play): whether a Pause or a player change came since.
+    int cancelCount() {
+        return cancels.get();
     }
 
     boolean isWanted(Request request, String activePlayer) {

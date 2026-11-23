@@ -470,7 +470,7 @@ public class CometClient {
 
     private void handlePlayerStatus(String id, String mode, String remote_title, String artist, String album, String title,
                                     String artwork_url, String coverid, long duration, long time, int volume,
-                                    long trackId, int rating, int playlistIndex, double playlistTimestamp, boolean powered,
+                                    long trackId, int rating, int playlistIndex, double playlistTimestamp, boolean powered, int shuffle,
                                     boolean pushed) {
         PlayerStatus status = new PlayerStatus();
         status.pushed = pushed;
@@ -493,6 +493,7 @@ public class CometClient {
         status.playlistIndex = playlistIndex;
         status.playlistTimestamp = playlistTimestamp;
         status.powered = powered;
+        status.shuffle = shuffle;
         if (!Utils.isEmpty(artwork_url)) {
             String resolved = resolveImageUrl(artwork_url);
             if (!Utils.isEmpty(resolved)) {
@@ -647,12 +648,14 @@ public class CometClient {
                         Math.round(getFloat(track, "rating")),
                         response.has("playlist_cur_index") ? (int) getFloat(response, "playlist_cur_index") : -1,
                         response.optDouble("playlist_timestamp", 0),
-                        isPowered(response.opt("power"), response.opt("player_connected")), false);
+                        isPowered(response.opt("power"), response.opt("player_connected")),
+                        response.optInt("playlist shuffle", 0), false);
                 return;
             }
         }
         handlePlayerStatus(id, getString(response, "mode"), null, null, null, null, null, null, 0, 0, volume, 0, 0, -1, 0,
-                isPowered(response.opt("power"), response.opt("player_connected")), false);
+                isPowered(response.opt("power"), response.opt("player_connected")),
+                        response.optInt("playlist shuffle", 0), false);
     }
 
     @SuppressWarnings("unchecked")
@@ -686,10 +689,12 @@ public class CometClient {
                     Math.round(parseFloat(track.get("rating"))),
                     null==messageData.get("playlist_cur_index") ? -1 : (int) parseFloat(messageData.get("playlist_cur_index")),
                     parseDouble(messageData.get("playlist_timestamp")),
-                    isPowered(messageData.get("power"), messageData.get("player_connected")), true);
+                    isPowered(messageData.get("power"), messageData.get("player_connected")),
+                    (int) parseFloat(messageData.get("playlist shuffle")), true);
         } else {
             handlePlayerStatus(playerId, (String)messageData.get("mode"), null, null, null, null, null, null, 0, 0, volume, 0, 0, -1, 0,
-                    isPowered(messageData.get("power"), messageData.get("player_connected")), true);
+                    isPowered(messageData.get("power"), messageData.get("player_connected")),
+                    (int) parseFloat(messageData.get("playlist shuffle")), true);
         }
     }
 }
