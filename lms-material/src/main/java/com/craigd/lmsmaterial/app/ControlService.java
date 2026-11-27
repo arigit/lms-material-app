@@ -103,6 +103,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     private static final int COMMAND_STATUS_REFRESH_MS = 500;
     private static final int PLAY_STATUS_REFRESH_MS = 2000;
     private static final int RESUME_TOLERANCE_MS = 3000;
+    // After a pause sent from here, a status saying "play" may have been read before LMS paused: no resume seek on it
+    // (a seek plays in LMS, undoing the pause). The seek waits for the next play.
+    private static final int PAUSE_STATUS_STALE_MS = 3000;
     private static final int MSG_ID = 1;
     private static final int COVER_TIMEOUT_MS = 10000;
     private static final int PLAYER_AVAILABILITY_RETRY_MS = 1000;
@@ -265,6 +268,9 @@ public class ControlService extends MediaBrowserServiceCompat {
     // "Resume after reconnecting": loaded on car connect, played once the player is on if it hasn't moved on since
     // (cleared then either way). Main thread only.
     private CarResume carResume;
+    // The car resume whose seek to the saved position (resumePlayer, ...) hasn't happened yet. Guarded by this.
+    private CarResume carResumeSeeking;
+    private volatile long pauseSentAt; // elapsedRealtime of the last pause sent to LMS from here
     private boolean carResumeChecking;
     private boolean carResumePlay; // a play arrived during the check
     private int carResumeCancels; // playRequests.cancelCount() when the check started, or the last play during it
@@ -274,6 +280,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     private long playingSeenAt;
     private boolean carConnected;
     private boolean carStateConnected; // last state read from Android Auto's car connection provider
+    private boolean carStateKnown; // that provider has been read
     private BroadcastReceiver carConnectionReceiver;
     // While the car is connected: has the Rediscover Releases plugin changed its list (rebuilt, or albums played in
     // full removed)? Then Android Auto reloads it. The plugin cleans up a few minutes after a listed album is played.
@@ -1289,6 +1296,9 @@ public class ControlService extends MediaBrowserServiceCompat {
         if (null==rpc) {
             rpc = new JsonRpc(getApplicationContext());
         }
+        if (PAUSE_COMMAND == command) {
+            pauseSentAt = SystemClock.elapsedRealtime();
+        }
         rpc.sendMessage(MainActivity.activePlayer, command);
         if (null!=cometClient && !cometClient.isConnected() && Utils.isNetworkConnected(this)) {
             cometClient.connect();
@@ -1651,6 +1661,7 @@ public class ControlService extends MediaBrowserServiceCompat {
 
     private synchronized void saveResumePosition(String playerId, long trackId, long time) {
         Utils.debug("Saving position " + Utils.timeStr(time) + " of " + playerId);
+        carResumeSeeking = null;
         resumePlayer = playerId;
         resumeTrackId = trackId;
         resumeTime = time;
@@ -1669,11 +1680,16 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
         if (status.trackId > 0 && status.trackId != resumeTrackId) {
             resumePlayer = null; // another track was played
+            carResumeSeeking = null;
         } else if (status.isPlaying && status.trackId == resumeTrackId) {
             if (status.duration > 0 && status.time >= status.duration - StuckTrack.AT_END_MS &&
                     resumeTime < status.duration - StuckTrack.AT_END_MS) {
                 // Right after a (re)start LMS can report the end of the track until the player's first status:
                 // that would skip the seek. Wait for the next one.
+                return;
+            }
+            if (0!=pauseSentAt && SystemClock.elapsedRealtime() - pauseSentAt < PAUSE_STATUS_STALE_MS) {
+                Utils.debug("Paused just now, not seeking to " + Utils.timeStr(resumeTime) + " yet");
                 return;
             }
             if (status.time < resumeTime - RESUME_TOLERANCE_MS) {
@@ -1683,7 +1699,26 @@ public class ControlService extends MediaBrowserServiceCompat {
                 handler.postDelayed(commandStatusRefresh, COMMAND_STATUS_REFRESH_MS);
             }
             resumePlayer = null;
+            carResumeSeeking = null;
         }
+    }
+
+    // The car disconnected before its resume got to the saved position: the seek would start playback again after
+    // the player's pause at the disconnect (a seek plays in LMS), on the phone's speaker. Drop it, and keep the saved
+    // state for the next drive (the track is still at its start). Returns whether there was one.
+    private synchronized boolean dropCarResumeSeek() {
+        CarResume resume = carResumeSeeking;
+        if (null==resume) {
+            return false;
+        }
+        carResumeSeeking = null;
+        if (resume.player.equals(resumePlayer)) {
+            resumePlayer = null;
+        }
+        Utils.debug("Car disconnected before the resume got to " + Utils.timeStr(resume.time) +
+                ": not seeking, keeping it for the next drive");
+        prefs.edit().putString(CAR_RESUME_STATE_PREF_KEY, resume.serialize()).apply();
+        return true;
     }
 
     // If the active player is this phone's and isn't connected, start the player app; the player is switched on
@@ -1847,6 +1882,12 @@ public class ControlService extends MediaBrowserServiceCompat {
                 status.playlistIndex < 0) {
             return;
         }
+        if (carStateKnown && !carStateConnected) {
+            // Only Android Auto's browse bind so far: it binds before the car session is up, and also when the
+            // session never comes up (e.g. a car driving off while wireless Android Auto starts), and then no
+            // disconnect follows. Wait for the car state to say connected before starting playback.
+            return;
+        }
         checkCarResume(false);
     }
 
@@ -1901,6 +1942,11 @@ public class ControlService extends MediaBrowserServiceCompat {
         carResumeChecking = false;
         boolean play = carResumePlay;
         carResumePlay = false;
+        if (!carConnected) {
+            // The car left during the check: nothing is played (the saved state was kept for the next drive).
+            Utils.debug("Car disconnected during the resume check, not resuming");
+            return;
+        }
         if (carResumeCancels != playRequests.cancelCount()) {
             // Paused (or another player selected) while the status was read: the user doesn't want it to play.
             clearCarResume("paused during the resume check");
@@ -1924,6 +1970,9 @@ public class ControlService extends MediaBrowserServiceCompat {
         clearCarResume("playing from " + Utils.timeStr(resume.time));
         // Seeked to once it plays.
         saveResumePosition(resume.player, resume.trackId, resume.time);
+        synchronized (this) {
+            carResumeSeeking = resume;
+        }
         if (playing) {
             handler.removeCallbacks(commandStatusRefresh);
             handler.post(commandStatusRefresh);
@@ -2056,6 +2105,10 @@ public class ControlService extends MediaBrowserServiceCompat {
                 // say disconnected after onGetRoot has already seen the car.
                 boolean changed = connected != carStateConnected;
                 carStateConnected = connected;
+                carStateKnown = true;
+                if (connected && changed && carConnected) {
+                    carResumeStatus(lastStatus); // the resume waited for this (see carResumeStatus)
+                }
                 if (connected != carConnected && (connected || changed)) {
                     Utils.debug("Car " + (connected ? "connected" : "disconnected"));
                     if (connected) {
@@ -2063,7 +2116,11 @@ public class ControlService extends MediaBrowserServiceCompat {
                     } else {
                         carConnected = false;
                         lastAutoConnect = 0; // the debounce is only for repeats within one connection
-                        saveCarState();
+                        // A play still waiting for the player app would now start on the phone's speaker.
+                        cancelPendingPlay("car disconnected");
+                        if (!dropCarResumeSeek()) {
+                            saveCarState();
+                        }
                         updateMediaSession();
                     }
                 }
