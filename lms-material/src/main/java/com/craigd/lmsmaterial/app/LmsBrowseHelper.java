@@ -66,7 +66,10 @@ public class LmsBrowseHelper {
     // "Add to queue" row in an album's or playlist's track list (+ "album/<id>" or "playlist/<id>"). A row rather
     // than a custom browse action: Android Auto (17.9) gives the app none.
     private static final String QUEUE_ADD_PREFIX = "queueadd/";
-    private static final String ALBUM_TRACK_PREFIX = "albumtrack/";
+    private static final String ALBUM_TRACK_PREFIX = "albumtrack/"; // + "<album id>/<index>"
+    // "Play album" row at the top of an album's track list (+ album ID). Its own ID: Android Auto tells list items
+    // apart by media ID, and "albumtrack/<id>/0" is already the first track
+    private static final String ALBUM_PLAY_PREFIX = "albumplay/";
     private static final String LETTERS_PREFIX = "letters/"; // + A-Z list ID: pick a letter of that list
     private static final String ALL_LIBRARIES_ID = "-1"; // LMS: no library restriction
 
@@ -1171,7 +1174,7 @@ public class LmsBrowseHelper {
             // starts playback at that track - so remember the list for playMediaId().
             List<String> trackIds = new ArrayList<>();
             if (loop.length() > 0) {
-                items.add(buildPlayableItem(ALBUM_TRACK_PREFIX + albumId + "/0", context.getString(R.string.play_album), null, drawableUri(R.drawable.ic_play)));
+                items.add(buildPlayableItem(ALBUM_PLAY_PREFIX + albumId, context.getString(R.string.play_album), null, drawableUri(R.drawable.ic_play)));
                 items.add(buildQueueAddItem("album/" + albumId));
             }
             for (int i = 0; i < loop.length(); i++) {
@@ -1737,18 +1740,25 @@ public class LmsBrowseHelper {
         return items;
     }
 
+    private void playAlbumTrack(String albumId, String index) {
+        AlbumTracks tracks = lastAlbumTracks;
+        if (null!=tracks && tracks.albumId.equals(albumId)) {
+            sendLoadCommand("track_id:" + String.join(",", tracks.trackIds), "play_index:" + index);
+        } else {
+            sendLoadCommand("album_id:" + albumId, "play_index:" + index);
+        }
+    }
+
     public boolean playMediaId(String mediaId) {
-        if (mediaId.startsWith(ALBUM_TRACK_PREFIX)) {
+        if (mediaId.startsWith(ALBUM_PLAY_PREFIX)) {
+            playAlbumTrack(mediaId.substring(ALBUM_PLAY_PREFIX.length()), "0");
+            return true;
+        } else if (mediaId.startsWith(ALBUM_TRACK_PREFIX)) {
             String[] parts = mediaId.substring(ALBUM_TRACK_PREFIX.length()).split("/");
             if (parts.length != 2) {
                 return false;
             }
-            AlbumTracks tracks = lastAlbumTracks;
-            if (null!=tracks && tracks.albumId.equals(parts[0])) {
-                sendLoadCommand("track_id:" + String.join(",", tracks.trackIds), "play_index:" + parts[1]);
-            } else {
-                sendLoadCommand("album_id:" + parts[0], "play_index:" + parts[1]);
-            }
+            playAlbumTrack(parts[0], parts[1]);
             return true;
         } else if (mediaId.startsWith("album/")) {
             sendLoadCommand("album_id:" + mediaId.substring(6));

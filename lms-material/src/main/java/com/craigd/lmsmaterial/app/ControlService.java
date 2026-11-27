@@ -424,9 +424,12 @@ public class ControlService extends MediaBrowserServiceCompat {
     @Override
     public void onLoadChildren(@NonNull String parentId, @NonNull Result<List<MediaBrowserCompat.MediaItem>> result) {
         result.detach();
+        long requestedAt = SystemClock.elapsedRealtime();
         getBrowseExecutor().execute(() -> {
             try {
                 List<MediaBrowserCompat.MediaItem> items = getBrowseHelper().loadChildren(parentId);
+                Utils.debug("Children of " + parentId + ": " + items.size() + " items in "
+                        + (SystemClock.elapsedRealtime() - requestedAt) + " ms");
                 result.sendResult(items);
             } catch (Exception e) {
                 Utils.error("Failed to load children for: " + parentId, e);
