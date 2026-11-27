@@ -106,6 +106,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     // After a pause sent from here, a status saying "play" may have been read before LMS paused: no resume seek on it
     // (a seek plays in LMS, undoing the pause). The seek waits for the next play.
     private static final int PAUSE_STATUS_STALE_MS = 3000;
+    private static final int POWER_OFF_STOP_MS = 15000; // a stop this soon after a Power off from here is its result
     private static final int MSG_ID = 1;
     private static final int COVER_TIMEOUT_MS = 10000;
     private static final int PLAYER_AVAILABILITY_RETRY_MS = 1000;
@@ -271,6 +272,7 @@ public class ControlService extends MediaBrowserServiceCompat {
     // The car resume whose seek to the saved position (resumePlayer, ...) hasn't happened yet. Guarded by this.
     private CarResume carResumeSeeking;
     private volatile long pauseSentAt; // elapsedRealtime of the last pause sent to LMS from here
+    private volatile long powerOffSentAt; // ... and of the last Power off
     private boolean carResumeChecking;
     private boolean carResumePlay; // a play arrived during the check
     private int carResumeCancels; // playRequests.cancelCount() when the check started, or the last play during it
@@ -1019,6 +1021,7 @@ public class ControlService extends MediaBrowserServiceCompat {
             playingPlayer = status.id;
             playingSeenAt = SystemClock.elapsedRealtime();
         }
+        checkStoppedWhilePaused(lastStatus, status);
         lastStatus = status;
         checkResumePosition(status);
         handler.post(() -> {
@@ -1298,6 +1301,8 @@ public class ControlService extends MediaBrowserServiceCompat {
         }
         if (PAUSE_COMMAND == command) {
             pauseSentAt = SystemClock.elapsedRealtime();
+        } else if (POWER_OFF_COMMAND == command) {
+            powerOffSentAt = SystemClock.elapsedRealtime();
         }
         rpc.sendMessage(MainActivity.activePlayer, command);
         if (null!=cometClient && !cometClient.isConnected() && Utils.isNetworkConnected(this)) {
@@ -1671,6 +1676,23 @@ public class ControlService extends MediaBrowserServiceCompat {
     private synchronized long displayTime(PlayerStatus status) {
         return null!=resumePlayer && resumePlayer.equals(status.id) && !status.isPlaying && status.time < resumeTime &&
                 (status.trackId <= 0 || status.trackId == resumeTrackId) ? resumeTime : status.time;
+    }
+
+    // LMS stops a paused player that reconnects (its state table: ContinuePlay while paused -> _Stop), e.g. after
+    // the phone changed networks, and playing it then starts the track at 0:00. Keep the paused position: it is
+    // shown while stopped and seeked to once the track plays (as after Power off). Not after a Power off from here,
+    // which has its own handling (players set to stop at power off are left alone). Called with the status lock held.
+    private void checkStoppedWhilePaused(PlayerStatus before, PlayerStatus now) {
+        if (null==before || null==now || !now.id.equals(before.id) || !"pause".equals(before.mode) ||
+                !"stop".equals(now.mode) || !before.powered || !now.powered || before.playlistIndex < 0 ||
+                now.playlistIndex != before.playlistIndex || before.trackId <= 0 || now.trackId != before.trackId ||
+                before.time < RESUME_TOLERANCE_MS ||
+                (0!=powerOffSentAt && SystemClock.elapsedRealtime() - powerOffSentAt < POWER_OFF_STOP_MS) ||
+                now.id.equals(resumePlayer)) {
+            return;
+        }
+        Utils.debug("Stopped by LMS while paused at " + Utils.timeStr(before.time) + ", keeping that for the next play");
+        saveResumePosition(now.id, before.trackId, before.time);
     }
 
     // Called with the status lock held.
